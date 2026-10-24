@@ -1,0 +1,83 @@
+server:
+  port: ${SERVER_PORT:8021}
+  shutdown: graceful
+
+spring:
+  application:
+    name: wzblog
+  config:
+    import: optional:file:./.env[.properties]
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    url: "jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:wzblog}?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true"
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 3000
+      validation-timeout: 3000
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:1}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  jackson:
+    time-zone: UTC
+    serialization:
+      write-dates-as-timestamps: false
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: true
+  main:
+    banner-mode: off
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    root: INFO
+    com.wzblog: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{40} - %msg%n"
+
+wzblog:
+  file:
+    storage: ${FILE_STORAGE:local}
+    root: ${FILE_STORAGE_ROOT:./data/uploads}
+    public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}
+  admin:
+    username: ${WZBLOG_ADMIN_USERNAME:}
+    password: ${WZBLOG_ADMIN_PASSWORD:}
+    email: ${WZBLOG_ADMIN_EMAIL:}
