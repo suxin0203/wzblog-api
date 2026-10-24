@@ -76,9 +76,13 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .requestMatchers(PUBLIC_AUTH_PATHS).permitAll()
                         .requestMatchers("/api/v1/users/*/profile").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/articles", "/api/v1/articles/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/categories/**", "/api/v1/tags/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/articles/*/view").permitAll()
                         // 未映射的路径放行，交由 MVC 输出 404（避免未知路径被 401 掩盖）
                         .requestMatchers(unmappedRequest(handlerMappingProvider)).permitAll()
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/admin/users/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/admin/**").hasAnyRole("EDITOR", "ADMIN")
                         .requestMatchers("/actuator/prometheus").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService, userMapper, tokenStateStore, objectMapper),
