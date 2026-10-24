@@ -44,6 +44,7 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     banner: false
@@ -77,6 +78,26 @@ wzblog:
     storage: ${FILE_STORAGE:local}
     root: ${FILE_STORAGE_ROOT:./data/uploads}
     public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}
+  auth:
+    jwt-secret: ${JWT_SECRET:wzblog-dev-only-secret-key-please-override-0123456789}
+    issuer: wzblog
+    audience: wzblog-web
+    access-ttl: 15m
+    refresh-ttl: 14d
+    refresh-grace: 10s
+    captcha-enabled: ${WZBLOG_CAPTCHA_ENABLED:true}
+    captcha-ttl: 5m
+    captcha-max-fails: 3
+    login-max-failures: 5
+    login-lock-ttl: 15m
+    login-ip-limit-per-minute: 30
+    reset-token-ttl: 5m
+    code-pepper: ${WZBLOG_CODE_PEPPER:wzblog-dev-code-pepper}
+    verification-max-attempts: 3
+    register-ip-limit-per-hour: 10
+    forgot-email-limit-per-hour: 5
+    forgot-ip-limit-per-hour: 10
+    avatar-public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}
   admin:
     username: ${WZBLOG_ADMIN_USERNAME:}
     password: ${WZBLOG_ADMIN_PASSWORD:}
