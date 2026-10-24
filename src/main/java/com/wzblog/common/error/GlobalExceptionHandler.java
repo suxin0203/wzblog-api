@@ -26,7 +26,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Object>> handleBusiness(BusinessException ex) {
         ErrorCode code = ex.errorCode();
-        return ResponseEntity.status(code.httpStatus()).body(Result.fail(code, ex.getMessage()));
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(code.httpStatus());
+        if (ex.retryAfterSeconds() != null) {
+            builder.header("Retry-After", String.valueOf(ex.retryAfterSeconds()));
+        }
+        return builder.body(Result.fail(code, ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

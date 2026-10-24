@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+wzblog:
+  auth:
+    jwt-secret: test-secret-key-with-at-least-32-bytes-0123456789
+    captcha-enabled: false
+    login-ip-limit-per-minute: 10000
+    register-ip-limit-per-hour: 10000
+    forgot-email-limit-per-hour: 1000
+    forgot-ip-limit-per-hour: 1000
+    code-pepper: test-pepper
+    log-verification-code: true
+  admin:
+    username: bootstrap_admin
+    password: AdminPass123
+    email: bootstrap@wzblog.test
+
+logging:
+  level:
+    com.wzblog: INFO

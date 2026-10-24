@@ -4,3 +4,6 @@ logging:
 mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+wzblog:
+  auth:
+    log-verification-code: true
