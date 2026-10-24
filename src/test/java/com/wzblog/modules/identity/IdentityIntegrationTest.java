@@ -296,6 +296,14 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         assertThat(malformedRefresh.code()).isEqualTo("AUTH_REFRESH_INVALID");
     }
 
+    @Test
+    void invalidTokenDoesNotBlockPublicEndpoint() {
+        HttpResult ping = exchange(org.springframework.http.HttpMethod.GET, "/api/v1/ping",
+                null, "not-a-jwt", null);
+        assertThat(ping.status()).isEqualTo(200);
+        assertThat(ping.code()).isEqualTo("OK");
+    }
+
     // ------------------------------------------------------------ 资料与会话
 
     @Test

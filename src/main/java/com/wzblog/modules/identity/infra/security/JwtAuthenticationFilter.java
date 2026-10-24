@@ -57,16 +57,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             JwtService.AccessTokenClaims claims = jwtService.parse(token);
             if (tokenStateStore.isBlacklisted(claims.jti())) {
-                SecurityErrorWriter.write(response, objectMapper, ErrorCode.AUTH_TOKEN_INVALID);
+                request.setAttribute(SecurityErrorWriter.AUTH_ERROR_ATTRIBUTE, ErrorCode.AUTH_TOKEN_INVALID);
+                filterChain.doFilter(request, response);
                 return;
             }
             User user = userMapper.selectById(claims.userId());
             if (user == null || user.isDeleted()) {
-                SecurityErrorWriter.write(response, objectMapper, ErrorCode.AUTH_TOKEN_INVALID);
+                request.setAttribute(SecurityErrorWriter.AUTH_ERROR_ATTRIBUTE, ErrorCode.AUTH_TOKEN_INVALID);
+                filterChain.doFilter(request, response);
                 return;
             }
             if (user.getStatus() != com.wzblog.modules.identity.domain.UserStatus.ACTIVE) {
-                SecurityErrorWriter.write(response, objectMapper, ErrorCode.AUTH_ACCOUNT_DISABLED);
+                request.setAttribute(SecurityErrorWriter.AUTH_ERROR_ATTRIBUTE, ErrorCode.AUTH_ACCOUNT_DISABLED);
+                filterChain.doFilter(request, response);
                 return;
             }
             CurrentUser principal = new CurrentUser(user.getId(), user.getRole());
@@ -76,7 +79,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(authentication);
             filterChain.doFilter(request, response);
         } catch (com.wzblog.common.error.BusinessException ex) {
-            SecurityErrorWriter.write(response, objectMapper, ex.errorCode());
+            // Public endpoints must stay readable with a stale/expired token; protected ones
+            // turn this attribute into a precise 401 via the AuthenticationEntryPoint.
+            request.setAttribute(SecurityErrorWriter.AUTH_ERROR_ATTRIBUTE, ex.errorCode());
+            filterChain.doFilter(request, response);
         }
     }
 }

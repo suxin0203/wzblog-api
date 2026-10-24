@@ -79,7 +79,7 @@ wzblog:
     root: ${FILE_STORAGE_ROOT:./data/uploads}
     public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}
   auth:
-    jwt-secret: ${JWT_SECRET:wzblog-dev-only-secret-key-please-override-0123456789}
+    jwt-secret: ${JWT_SECRET}
     issuer: wzblog
     audience: wzblog-web
     access-ttl: 15m
@@ -92,7 +92,8 @@ wzblog:
     login-lock-ttl: 15m
     login-ip-limit-per-minute: 30
     reset-token-ttl: 5m
-    code-pepper: ${WZBLOG_CODE_PEPPER:wzblog-dev-code-pepper}
+    code-pepper: ${WZBLOG_CODE_PEPPER}
+    log-verification-code: ${WZBLOG_LOG_VERIFICATION_CODE:false}
     verification-max-attempts: 3
     register-ip-limit-per-hour: 10
     forgot-email-limit-per-hour: 5

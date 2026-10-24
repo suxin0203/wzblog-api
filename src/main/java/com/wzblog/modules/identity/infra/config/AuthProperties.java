@@ -12,8 +12,8 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "wzblog.auth")
 public class AuthProperties {
 
-    /** HS256 密钥，至少 256bit；生产必须通过 JWT_SECRET 注入。 */
-    private String jwtSecret = "wzblog-dev-only-secret-key-please-override-0123456789";
+    /** HS256 密钥，至少 256bit；必须由 JWT_SECRET 注入，不提供默认值。 */
+    private String jwtSecret;
     private String issuer = "wzblog";
     private String audience = "wzblog-web";
     private Duration accessTtl = Duration.ofMinutes(15);
@@ -29,7 +29,8 @@ public class AuthProperties {
     private int loginIpLimitPerMinute = 30;
 
     private Duration resetTokenTtl = Duration.ofMinutes(5);
-    private String codePepper = "wzblog-dev-code-pepper";
+    private String codePepper;
+    private boolean logVerificationCode = false;
     private int verificationMaxAttempts = 3;
     private int registerIpLimitPerHour = 10;
     private int forgotEmailLimitPerHour = 5;
@@ -147,6 +148,14 @@ public class AuthProperties {
 
     public void setCodePepper(String codePepper) {
         this.codePepper = codePepper;
+    }
+
+    public boolean isLogVerificationCode() {
+        return logVerificationCode;
+    }
+
+    public void setLogVerificationCode(boolean logVerificationCode) {
+        this.logVerificationCode = logVerificationCode;
     }
 
     public int getRegisterIpLimitPerHour() {

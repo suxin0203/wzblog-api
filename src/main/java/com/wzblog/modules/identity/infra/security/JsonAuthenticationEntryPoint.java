@@ -25,6 +25,8 @@ public class JsonAuthenticationEntryPoint implements AuthenticationEntryPoint {
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException authException) throws IOException {
-        SecurityErrorWriter.write(response, objectMapper, ErrorCode.AUTH_UNAUTHORIZED);
+        Object attribute = request.getAttribute(SecurityErrorWriter.AUTH_ERROR_ATTRIBUTE);
+        ErrorCode code = attribute instanceof ErrorCode errorCode ? errorCode : ErrorCode.AUTH_UNAUTHORIZED;
+        SecurityErrorWriter.write(response, objectMapper, code);
     }
 }

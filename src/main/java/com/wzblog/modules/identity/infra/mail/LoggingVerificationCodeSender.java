@@ -1,21 +1,32 @@
 package com.wzblog.modules.identity.infra.mail;
 
 import com.wzblog.modules.identity.app.VerificationCodeSender;
+import com.wzblog.modules.identity.infra.config.AuthProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * 默认发送实现：只打日志（不接 SMTP）。邮箱做掩码，验证码仅本地开发可见。
+ * 默认发送实现：只打日志（不接 SMTP）。验证码仅在显式开启本地调试时输出。
  */
 @Component
 public class LoggingVerificationCodeSender implements VerificationCodeSender {
 
     private static final Logger log = LoggerFactory.getLogger(LoggingVerificationCodeSender.class);
 
+    private final AuthProperties properties;
+
+    public LoggingVerificationCodeSender(AuthProperties properties) {
+        this.properties = properties;
+    }
+
     @Override
     public void sendResetCode(String email, String code) {
-        log.info("Password reset verification code issued for {}: {}", mask(email), code);
+        if (properties.isLogVerificationCode()) {
+            log.info("Password reset verification code issued for {}: {}", mask(email), code);
+        } else {
+            log.info("Password reset verification code issued for {}", mask(email));
+        }
     }
 
     private String mask(String email) {

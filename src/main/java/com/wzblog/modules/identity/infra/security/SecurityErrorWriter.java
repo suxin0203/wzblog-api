@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
  */
 public final class SecurityErrorWriter {
 
+    public static final String AUTH_ERROR_ATTRIBUTE = "wzblog.authError";
+
     private SecurityErrorWriter() {
     }
 

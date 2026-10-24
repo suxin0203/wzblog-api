@@ -16,6 +16,7 @@ wzblog:
     forgot-email-limit-per-hour: 1000
     forgot-ip-limit-per-hour: 1000
     code-pepper: test-pepper
+    log-verification-code: true
   admin:
     username: bootstrap_admin
     password: AdminPass123
