@@ -28,6 +28,9 @@ logs/
 # Local toolchain (JDK/Maven if downloaded)
 tools/
 
+# Git worktrees for parallel agents
+.worktrees/
+
 # Test / coverage
 target/surefire-reports/
 target/failsafe-reports/
