@@ -43,11 +43,11 @@ Java 21 · Spring Boot 3.5 · Spring Security · MyBatis-Plus · MySQL 8 · Redi
 - [x] M1 认证（21 路由，25 个测试全绿）
 - [x] M2 内容（33 路由，Markdown 流水线/搜索/游标分页/修订/阅读计数，17 个新增集成测试）
 - [x] M5 媒体（7 路由，本地磁盘 adapter/模拟预签名/EXIF/缩略图/去重/清理，13 个新增集成测试）
-- [ ] M3 互动
+- [x] M3 互动（24 路由，两级评论树/Aho-Corasick 敏感词/幂等 toggle/通知 SSE/计数对账，12 个新增集成测试）
 - [ ] M4 积分
 - [ ] M5 媒体
 - [ ] M6 AI
 - [ ] M7 运营
 - [ ] M8 微信（P2 可选）
 
-> 后端开发进行中，`master` 当前包含 M0 + M1 + M2 + M5（另含工程债清偿：CI/ArchUnit/JaCoCo/Compose）。启动与测试命令见 [11-本地环境与运行](docs/11-本地环境与运行.md)；前端暂不改动。
+> 后端开发进行中，`master` 当前包含 M0 + M1 + M2 + M5 + M3（另含工程债清偿：CI/ArchUnit/JaCoCo/Compose）。启动与测试命令见 [11-本地环境与运行](docs/11-本地环境与运行.md)；前端暂不改动。

@@ -15,5 +15,12 @@ public record ArticleBrief(
         ArticleVisibility visibility,
         boolean allowComment,
         boolean deleted
+        
 ) {
+
+    /** 跨模块消费方判断：已发布、公开、未删（避免外部触碰本模块枚举）。 */
+    public boolean publiclyVisible() {
+        return !deleted && status == ArticleStatus.PUBLISHED && visibility == ArticleVisibility.PUBLIC;
+    }
 }
+

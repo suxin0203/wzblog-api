@@ -21,6 +21,13 @@ wzblog:
     username: bootstrap_admin
     password: AdminPass123
     email: bootstrap@wzblog.test
+  interaction:
+    user-comment-short-limit: 10000
+    user-comment-daily-limit: 100000
+    guest-comment-short-limit: 10000
+    guest-comment-daily-limit: 100000
+    guestbook-short-limit: 10000
+    guestbook-daily-limit: 100000
   file:
     storage: local
     root: ./target/test-uploads

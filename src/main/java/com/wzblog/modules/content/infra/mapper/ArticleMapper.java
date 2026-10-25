@@ -403,6 +403,13 @@ public interface ArticleMapper extends BaseMapper<Article> {
             """)
     int incrementCounter(@Param("id") Long id, @Param("type") String type, @Param("delta") int delta);
 
+    /** 对账候选：任一计数非零的文章（与明细聚合取并集）。 */
+    @Select("""
+            SELECT id FROM articles
+            WHERE like_count > 0 OR favorite_count > 0 OR comment_count > 0
+            """)
+    java.util.List<Long> selectIdsWithCounters();
+
     @Update("""
             <script>
             UPDATE articles SET
