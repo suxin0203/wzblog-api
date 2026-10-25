@@ -206,6 +206,66 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                        <configuration>
+                            <!-- 数据文件放临时目录：Windows 下 cmd.exe 转发 fork 命令会破坏含非 ASCII 的绝对路径 -->
+                            <destFile>${java.io.tmpdir}/jacoco-wzblog.exec</destFile>
+                            <excludes>
+                                <!-- jsqlparser 为生成代码，方法超 ASM 上限，插桩会失败 -->
+                                <exclude>net.sf.jsqlparser.*</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                        <configuration>
+                            <dataFile>${java.io.tmpdir}/jacoco-wzblog.exec</dataFile>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <dataFile>${java.io.tmpdir}/jacoco-wzblog.exec</dataFile>
+                            <excludes>
+                                <exclude>com/wzblog/WzBlogApplication.class</exclude>
+                                <exclude>com/wzblog/config/**</exclude>
+                                <exclude>com/wzblog/modules/*/api/dto/**</exclude>
+                                <exclude>com/wzblog/modules/*/api/vo/**</exclude>
+                                <exclude>com/wzblog/modules/*/domain/event/**</exclude>
+                            </excludes>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.70</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

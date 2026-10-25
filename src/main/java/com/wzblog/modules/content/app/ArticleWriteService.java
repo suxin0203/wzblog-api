@@ -111,7 +111,12 @@ public class ArticleWriteService {
         article.setIsPinned(false);
         article.setAllowComment(request.allowComment() == null || request.allowComment());
         article.setVersion(0);
-        articleMapper.insert(article);
+        try {
+            articleMapper.insert(article);
+        } catch (DuplicateKeyException ex) {
+            // selectBySlug 预检与 INSERT 之间的并发窗口，由 slug 唯一键兜底
+            throw new BusinessException(ErrorCode.ARTICLE_SLUG_CONFLICT);
+        }
 
         replaceTags(article.getId(), tagIds);
         insertRevision(article, currentUser.id(), null);
@@ -149,11 +154,16 @@ public class ArticleWriteService {
         Set<String> oldImages = referencedImages(article.getContentMd(), article.getCoverKey());
         Set<String> newImages = referencedImages(request.contentMd(), coverKey);
 
-        int updated = articleMapper.updateContent(article.getId(), request.version(),
-                title, resolveSummary(request.summary(), rendered), coverKey,
-                category == null ? null : category.getId(), slug,
-                request.contentMd(), rendered.html(), rendered.text(), rendered.tocJson(),
-                rendered.wordCount(), rendered.readingSeconds(), visibility, allowComment);
+        int updated;
+        try {
+            updated = articleMapper.updateContent(article.getId(), request.version(),
+                    title, resolveSummary(request.summary(), rendered), coverKey,
+                    category == null ? null : category.getId(), slug,
+                    request.contentMd(), rendered.html(), rendered.text(), rendered.tocJson(),
+                    rendered.wordCount(), rendered.readingSeconds(), visibility, allowComment);
+        } catch (DuplicateKeyException ex) {
+            throw new BusinessException(ErrorCode.ARTICLE_SLUG_CONFLICT);
+        }
         if (updated == 0) {
             if (articleMapper.selectAnyById(id) == null) {
                 throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
