@@ -33,6 +33,20 @@ public class UserQueryService {
         return toBrief(user);
     }
 
+    /** M7 看板：区间注册数。 */
+    @Transactional(readOnly = true)
+    public long countRegisteredBetween(java.time.LocalDateTime from, java.time.LocalDateTime to) {
+        var wrapper = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>();
+        wrapper.ge(User::getCreatedAt, from).lt(User::getCreatedAt, to);
+        return userMapper.selectCount(wrapper);
+    }
+
+    /** M7 看板：总用户数。 */
+    @Transactional(readOnly = true)
+    public long countUsers() {
+        return userMapper.selectCount(null);
+    }
+
     /** 当前佩戴称号 id（M4 账户视图读取，无佩戴返回 null）。 */
     @Transactional(readOnly = true)
     public Long getActiveTitleId(Long userId) {

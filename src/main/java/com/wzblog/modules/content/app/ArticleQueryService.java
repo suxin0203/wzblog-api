@@ -146,6 +146,12 @@ public class ArticleQueryService {
         return result;
     }
 
+    /** M7 看板：区间发布文章数（PUBLISHED 且未删）。 */
+    @Transactional(readOnly = true)
+    public long countPublishedBetween(java.time.LocalDateTime from, java.time.LocalDateTime to) {
+        return articleMapper.countPublishedBetween(from, to);
+    }
+
     @Transactional(readOnly = true)
     public ReactionTarget getReactionTarget(Long id) {
         if (id == null) {

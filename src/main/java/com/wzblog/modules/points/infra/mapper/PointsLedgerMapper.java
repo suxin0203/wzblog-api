@@ -119,6 +119,16 @@ public interface PointsLedgerMapper extends BaseMapper<LedgerEntry> {
                         @Param("bizType") String bizType, @Param("from") LocalDateTime from,
                         @Param("to") LocalDateTime to);
 
+    /** M7 看板：区间发放/消耗合计（单行两列 → Map）。 */
+    @Select("""
+            SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS issued,
+                   COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS consumed
+            FROM points_ledger
+            WHERE created_at >= #{from} AND created_at < #{to}
+            """)
+    java.util.Map<String, Object> sumIssuedAndConsumedBetween(@Param("from") LocalDateTime from,
+                                                              @Param("to") LocalDateTime to);
+
     /** 对账：余额 vs 流水合计。 */
     @Select("""
             SELECT a.user_id AS userId, a.balance AS balance, COALESCE(SUM(l.amount), 0) AS ledgerSum

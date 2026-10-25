@@ -58,6 +58,12 @@ public class SecurityConfig {
             "/api/v1/titles"
     };
 
+    private static final String[] PUBLIC_OPERATION_PATHS = {
+            "/api/v1/banners",
+            "/api/v1/friend-links",
+            "/api/v1/public/configs"
+    };
+
     private static final String[] PUBLIC_AI_PATHS = {
             // AI 游客通道：JWT 或 X-AI-Session-Token（服务层校验）
             "/api/v1/ai/chat/stream",
@@ -109,6 +115,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_POINTS_PATHS).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/points/goods/*").permitAll()
                         .requestMatchers(PUBLIC_AI_PATHS).permitAll()
+                        .requestMatchers(PUBLIC_OPERATION_PATHS).permitAll()
                         // 未映射的路径放行，交由 MVC 输出 404（避免未知路径被 401 掩盖）
                         .requestMatchers(unmappedRequest(handlerMappingProvider)).permitAll()
                         .requestMatchers("/api/v1/admin/users/**").hasRole("ADMIN")

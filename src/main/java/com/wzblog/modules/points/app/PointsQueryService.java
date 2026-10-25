@@ -118,6 +118,21 @@ public class PointsQueryService {
         return entry == null ? null : toVo(entry);
     }
 
+    /** M7 看板：区间发放/消耗积分合计（正/负流水绝对值），[0]=issued [1]=consumed。 */
+    @Transactional(readOnly = true)
+    public long[] sumIssuedAndConsumedBetween(java.time.LocalDateTime from,
+                                              java.time.LocalDateTime to) {
+        java.util.Map<String, Object> row = ledgerMapper.sumIssuedAndConsumedBetween(from, to);
+        if (row == null) {
+            return new long[]{0, 0};
+        }
+        return new long[]{toLong(row.get("issued")), toLong(row.get("consumed"))};
+    }
+
+    private static long toLong(Object value) {
+        return value == null ? 0 : Long.parseLong(String.valueOf(value));
+    }
+
     public List<TitleVO> activeTitles() {
         return titleMapper.selectActive().stream()
                 .map(title -> new TitleVO(String.valueOf(title.getId()), title.getName(),

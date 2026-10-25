@@ -403,6 +403,15 @@ public interface ArticleMapper extends BaseMapper<Article> {
             """)
     int incrementCounter(@Param("id") Long id, @Param("type") String type, @Param("delta") int delta);
 
+    /** M7 看板：区间发布数。 */
+    @org.apache.ibatis.annotations.Select("""
+            SELECT COUNT(*) FROM articles
+            WHERE status = 'PUBLISHED' AND deleted_at IS NULL
+              AND published_at >= #{from} AND published_at < #{to}
+            """)
+    long countPublishedBetween(@org.apache.ibatis.annotations.Param("from") java.time.LocalDateTime from,
+                               @org.apache.ibatis.annotations.Param("to") java.time.LocalDateTime to);
+
     /** 对账候选：任一计数非零的文章（与明细聚合取并集）。 */
     @Select("""
             SELECT id FROM articles
