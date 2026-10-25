@@ -53,6 +53,11 @@ public class SecurityConfig {
             "/api/v1/guestbook"
     };
 
+    private static final String[] PUBLIC_POINTS_PATHS = {
+            "/api/v1/points/goods",
+            "/api/v1/titles"
+    };
+
     private static final String[] PUBLIC_AUTH_PATHS = {
             "/api/v1/auth/captcha",
             "/api/v1/auth/register",
@@ -93,6 +98,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/articles/*/comments").permitAll()
                         .requestMatchers(PUBLIC_INTERACTION_PATHS).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/files/*/url").permitAll()
+                        .requestMatchers(PUBLIC_POINTS_PATHS).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/points/goods/*").permitAll()
                         // 未映射的路径放行，交由 MVC 输出 404（避免未知路径被 401 掩盖）
                         .requestMatchers(unmappedRequest(handlerMappingProvider)).permitAll()
                         .requestMatchers("/api/v1/admin/users/**").hasRole("ADMIN")
