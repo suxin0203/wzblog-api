@@ -38,6 +38,12 @@ public class ArticleCounterService {
         return current(articleId, type);
     }
 
+    /** 供 M3 对账：任一计数非零的文章 id（M3 不读 articles 表）。 */
+    @Transactional(readOnly = true)
+    public java.util.List<Long> listArticleIdsWithCounters() {
+        return articleMapper.selectIdsWithCounters();
+    }
+
     private int current(Long articleId, CounterType type) {
         Integer value = articleMapper.selectCounter(articleId, type.name());
         return value == null ? 0 : value;
