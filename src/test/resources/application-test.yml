@@ -21,6 +21,12 @@ wzblog:
     username: bootstrap_admin
     password: AdminPass123
     email: bootstrap@wzblog.test
+  file:
+    storage: local
+    root: ./target/test-uploads
+    public-base-url: http://localhost:8021/media
+    upload-base-url: http://localhost:8021
+    url-secret: test-file-url-secret-with-at-least-32-bytes
 
 logging:
   level:

@@ -322,6 +322,11 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         assertThat(self.path("activeTitle").isNull()).isTrue();
         assertThat(self.path("createdAt").asText()).endsWith("Z");
 
+        // 头像引用需真实 files 行（M5 claimByKey 生效）
+        jdbc.update("""
+                INSERT INTO files (bucket, object_key, uploader_id, biz_type, status, ref_count, size_bytes)
+                VALUES ('local', 'avatar/2026/10/a.png', ?, 'AVATAR', 'ACTIVE', 0, 100)
+                """, Long.valueOf(userId));
         Map<String, Object> update = new LinkedHashMap<>();
         update.put("nickname", "新昵称");
         update.put("bio", "写代码，也写字。");

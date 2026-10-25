@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.error.ErrorCode;
+import com.wzblog.common.media.FileBizType;
+import com.wzblog.common.media.FileReferencePort;
 import com.wzblog.common.util.Times;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.identity.api.dto.ChangePasswordRequest;
@@ -38,17 +40,20 @@ public class UserAppService {
     private final PasswordEncoder passwordEncoder;
     private final UserVoAssembler assembler;
     private final AuthAppService authAppService;
+    private final FileReferencePort fileReferencePort;
 
     public UserAppService(UserMapper userMapper,
                           RefreshTokenMapper refreshTokenMapper,
                           PasswordEncoder passwordEncoder,
                           UserVoAssembler assembler,
-                          AuthAppService authAppService) {
+                          AuthAppService authAppService,
+                          FileReferencePort fileReferencePort) {
         this.userMapper = userMapper;
         this.refreshTokenMapper = refreshTokenMapper;
         this.passwordEncoder = passwordEncoder;
         this.assembler = assembler;
         this.authAppService = authAppService;
+        this.fileReferencePort = fileReferencePort;
     }
 
     public UserSelfVO me(CurrentUser currentUser) {
@@ -61,6 +66,11 @@ public class UserAppService {
         String bio = request.bio() == null || request.bio().isBlank() ? null : request.bio().trim();
         String avatarKey = request.avatarKey() == null || request.avatarKey().isBlank()
                 ? null : request.avatarKey().trim();
+        // 头像引用计数：先 claim 新头像（不存在即 4xx），更新成功后 release 旧头像
+        if (avatarKey != null) {
+            fileReferencePort.claimByKey(avatarKey, user.getId(), FileBizType.AVATAR);
+        }
+        String previousAvatar = user.getAvatarKey();
         userMapper.update(null, new LambdaUpdateWrapper<User>()
                 .eq(User::getId, user.getId())
                 .set(User::getNickname, request.nickname().trim())
@@ -68,6 +78,9 @@ public class UserAppService {
                 .set(User::getAvatarKey, avatarKey)
                 .setSql("version = version + 1")
                 .set(User::getUpdatedAt, Times.nowUtc()));
+        if (previousAvatar != null && !previousAvatar.equals(avatarKey)) {
+            fileReferencePort.releaseByKey(previousAvatar);
+        }
         return assembler.toSelf(requireUser(user.getId()));
     }
 

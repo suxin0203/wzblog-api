@@ -57,7 +57,17 @@ public enum ErrorCode {
 
     TAG_NOT_FOUND("TAG_NOT_FOUND", 404, "标签不存在"),
     TAG_NAME_CONFLICT("TAG_NAME_CONFLICT", 409, "标签名称已存在"),
-    TAG_SLUG_CONFLICT("TAG_SLUG_CONFLICT", 409, "标签 slug 已存在");
+    TAG_SLUG_CONFLICT("TAG_SLUG_CONFLICT", 409, "标签 slug 已存在"),
+
+    FILE_TYPE_UNSUPPORTED("FILE_TYPE_UNSUPPORTED", 400, "仅支持 JPG/PNG/WebP 图片"),
+    FILE_SIZE_EXCEEDED("FILE_SIZE_EXCEEDED", 400, "图片不能超过 5MB"),
+    FILE_PIXEL_EXCEEDED("FILE_PIXEL_EXCEEDED", 400, "图片分辨率过高"),
+    FILE_NOT_FOUND("FILE_NOT_FOUND", 404, "文件不存在"),
+    FILE_OBJECT_MISSING("FILE_OBJECT_MISSING", 422, "文件尚未上传成功，请重试"),
+    FILE_CONFIRM_TIMEOUT("FILE_CONFIRM_TIMEOUT", 409, "上传已失效，请重新上传"),
+    FILE_IN_USE("FILE_IN_USE", 409, "文件正在被引用，无法删除"),
+    FILE_PRESIGN_FORBIDDEN("FILE_PRESIGN_FORBIDDEN", 403, "无权操作该文件"),
+    FILE_CLEANUP_RUNNING("FILE_CLEANUP_RUNNING", 409, "清理任务正在执行，请稍后重试");
 
     private final String code;
     private final int httpStatus;
