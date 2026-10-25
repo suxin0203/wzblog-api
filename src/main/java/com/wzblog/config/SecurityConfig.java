@@ -58,6 +58,14 @@ public class SecurityConfig {
             "/api/v1/titles"
     };
 
+    private static final String[] PUBLIC_AI_PATHS = {
+            // AI 游客通道：JWT 或 X-AI-Session-Token（服务层校验）
+            "/api/v1/ai/chat/stream",
+            "/api/v1/ai/sessions/**",
+            "/api/v1/ai/messages/*/feedback",
+            "/api/v1/ai/quota"
+    };
+
     private static final String[] PUBLIC_AUTH_PATHS = {
             "/api/v1/auth/captcha",
             "/api/v1/auth/register",
@@ -100,6 +108,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/files/*/url").permitAll()
                         .requestMatchers(PUBLIC_POINTS_PATHS).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/points/goods/*").permitAll()
+                        .requestMatchers(PUBLIC_AI_PATHS).permitAll()
                         // 未映射的路径放行，交由 MVC 输出 404（避免未知路径被 401 掩盖）
                         .requestMatchers(unmappedRequest(handlerMappingProvider)).permitAll()
                         .requestMatchers("/api/v1/admin/users/**").hasRole("ADMIN")

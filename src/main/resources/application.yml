@@ -105,6 +105,12 @@ wzblog:
     forgot-email-limit-per-hour: 5
     forgot-ip-limit-per-hour: 10
     avatar-public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}
+  ai:
+    enabled: ${AI_ENABLED:true}
+    provider: ${AI_PROVIDER:mock}
+    base-url: ${AI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+    api-key: ${ZHIPU_API_KEY:}
+    model: ${AI_MODEL:glm-4-flash-250414}
   admin:
     username: ${WZBLOG_ADMIN_USERNAME:}
     password: ${WZBLOG_ADMIN_PASSWORD:}

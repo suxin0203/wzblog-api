@@ -121,14 +121,20 @@ public class ArticleQueryService {
                 .toList();
     }
 
-    public List<CategoryVO> listCategories() {
-        return taxonomyService.listPublicCategories();
+    public List<com.wzblog.modules.content.app.port.TaxonomyBrief> listCategories() {
+        return taxonomyService.listPublicCategories().stream()
+                .map(category -> new com.wzblog.modules.content.app.port.TaxonomyBrief(
+                        category.name(), category.slug(), category.articleCount()))
+                .toList();
     }
 
-    public List<TagVO> listTags(int limit) {
+    public List<com.wzblog.modules.content.app.port.TaxonomyBrief> listTags(int limit) {
         List<TagVO> tags = taxonomyService.listPublicTags();
         int size = Math.min(Math.max(limit, 1), tags.size());
-        return tags.subList(0, size);
+        return tags.subList(0, size).stream()
+                .map(tag -> new com.wzblog.modules.content.app.port.TaxonomyBrief(
+                        tag.name(), tag.slug(), tag.articleCount()))
+                .toList();
     }
 
     public Map<String, Object> getSiteOverview() {
