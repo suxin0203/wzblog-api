@@ -40,6 +40,10 @@ spring:
       add-mappings: true
   main:
     banner-mode: off
+  task:
+    scheduling:
+      pool:
+        size: 2
 
 mybatis-plus:
   configuration:
@@ -78,6 +82,8 @@ wzblog:
     storage: ${FILE_STORAGE:local}
     root: ${FILE_STORAGE_ROOT:./data/uploads}
     public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}
+    upload-base-url: ${FILE_UPLOAD_BASE_URL:http://localhost:8021}
+    url-secret: ${WZBLOG_FILE_URL_SECRET:${JWT_SECRET}}
   auth:
     jwt-secret: ${JWT_SECRET}
     issuer: wzblog

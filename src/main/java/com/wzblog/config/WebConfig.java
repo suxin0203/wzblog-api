@@ -11,8 +11,11 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void configurePathMatch(PathMatchConfigurer configurer) {
+        // 业务 REST 统一挂 /api/v1；@InfrastructureRoute（本地媒体等基础设施路由）不加前缀
         configurer.addPathPrefix("/api/v1", HandlerTypePredicate.forAnnotation(
-                org.springframework.web.bind.annotation.RestController.class));
+                        org.springframework.web.bind.annotation.RestController.class)
+                .and(HandlerTypePredicate.forAnnotation(
+                        com.wzblog.common.web.InfrastructureRoute.class).negate()));
     }
 
     @Override

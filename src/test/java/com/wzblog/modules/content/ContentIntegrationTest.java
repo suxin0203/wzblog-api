@@ -117,6 +117,11 @@ class ContentIntegrationTest extends IdentityTestSupport {
         assertThat(rejected.status()).isEqualTo(422);
         assertThat(rejected.code()).isEqualTo("ARTICLE_IMAGE_INVALID");
 
+        // 正文引用 /media/ 图片需真实 files 行（M5 claimByKey 生效）
+        jdbc.update("""
+                INSERT INTO files (bucket, object_key, uploader_id, biz_type, status, ref_count, size_bytes)
+                VALUES ('local', 'articles/2026/10/demo.png', ?, 'CONTENT_IMAGE', 'ACTIVE', 0, 100)
+                """, userId("bootstrap_admin"));
         HttpResult local = createArticle(token,
                 articleBody(unique("imgok"), "![x](/media/articles/2026/10/demo.png)"));
         assertThat(local.status()).isEqualTo(201);
