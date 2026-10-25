@@ -1,0 +1,114 @@
+# 单机部署形态（docs/08 §3）。默认只起 app+mysql+redis；
+# `docker compose --profile observability up -d` 追加 Prometheus/Grafana。
+# 密钥全部来自根目录 .env（见 .env.example），仓库不含真实值。
+name: wzblog
+
+services:
+  mysql:
+    image: mysql:8.0
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--default-time-zone=+00:00"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set in .env}
+      MYSQL_DATABASE: ${DB_NAME:-wzblog}
+      MYSQL_USER: ${DB_USER:-wzblog}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set in .env}
+      TZ: UTC
+    ports: ["127.0.0.1:3306:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    mem_limit: 1g
+    cpus: 1.0
+    networks: [wzblog-net]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb",
+              "--maxmemory-policy", "volatile-lru"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    mem_limit: 384m
+    cpus: 0.5
+    networks: [wzblog-net]
+    restart: unless-stopped
+
+  app:
+    build: { context: ., dockerfile: Dockerfile }
+    image: wzblog-server:${APP_VERSION:-local}
+    env_file: [.env]
+    environment:
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DATABASE: "0"
+      SERVER_PORT: "8021"
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+    ports: ["8021:8021"]
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8021/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    mem_limit: 1536m
+    cpus: 1.5
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "3" }
+    networks: [wzblog-net]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: [observability]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=15d"]
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+    networks: [wzblog-net]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes: ["grafana-data:/var/lib/grafana"]
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [prometheus]
+    mem_limit: 384m
+    networks: [wzblog-net]
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
+  prom-data:
+  grafana-data:
+
+networks:
+  wzblog-net:
+    driver: bridge
