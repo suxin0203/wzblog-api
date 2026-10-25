@@ -73,7 +73,7 @@ public abstract class IdentityTestSupport {
     @Autowired
     protected AdminUserAppService adminUserAppService;
 
-    protected record HttpResult(int status, JsonNode body, HttpHeaders headers) {
+    public record HttpResult(int status, JsonNode body, HttpHeaders headers) {
 
         public String code() {
             return body == null ? null : body.path("code").asText();

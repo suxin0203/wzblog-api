@@ -33,6 +33,16 @@ public class UserQueryService {
         return toBrief(user);
     }
 
+    /** 当前佩戴称号 id（M4 账户视图读取，无佩戴返回 null）。 */
+    @Transactional(readOnly = true)
+    public Long getActiveTitleId(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        User user = userMapper.selectById(userId);
+        return user == null ? null : user.getActiveTitleId();
+    }
+
     @Transactional(readOnly = true)
     public Map<Long, UserBrief> getBriefs(Collection<Long> userIds) {
         if (userIds == null || userIds.isEmpty()) {

@@ -3,6 +3,8 @@ package com.wzblog.modules.interaction.app;
 import com.wzblog.modules.content.app.port.ArticleBrief;
 import com.wzblog.modules.content.app.ArticleQueryService;
 import com.wzblog.modules.interaction.domain.Comment;
+import com.wzblog.modules.points.domain.event.OrderStatusChangedEvent;
+import com.wzblog.modules.points.domain.event.PointsAdjustedEvent;
 import com.wzblog.modules.interaction.domain.event.CommentApprovedEvent;
 import com.wzblog.modules.interaction.domain.event.CommentRemovedEvent;
 import com.wzblog.modules.interaction.domain.event.ReactionToggledEvent;
@@ -87,6 +89,40 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onCommentRemoved(CommentRemovedEvent event) {
         // 下架/删除不发通知（避免打扰），仅保留钩子供 M4 反向积分
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onOrderStatusChanged(OrderStatusChangedEvent event) {
+        try {
+            String type = switch (event.toStatus()) {
+                case "APPROVED" -> "ORDER_APPROVED";
+                case "SHIPPED" -> "ORDER_SHIPPED";
+                case "COMPLETED" -> "ORDER_COMPLETED";
+                case "REJECTED" -> "ORDER_REJECTED";
+                case "CANCELLED" -> "ORDER_CANCELLED";
+                default -> null;
+            };
+            if (type == null) {
+                return;
+            }
+            notificationAppService.create(event.userId(), null, type,
+                    "订单状态更新：" + event.toStatus(), "订单号 " + event.orderNo(),
+                    "ORDER", event.orderNo(), "order:" + event.orderNo() + ":" + event.toStatus());
+        } catch (Exception ex) {
+            log.warn("订单通知失败 orderNo={}", event.orderNo(), ex);
+        }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onPointsAdjusted(PointsAdjustedEvent event) {
+        try {
+            notificationAppService.create(event.userId(), null, "POINTS_ADJUSTED",
+                    "积分调整：" + (event.amount() > 0 ? "+" : "") + event.amount(),
+                    "当前余额 " + event.balanceAfter() + "；" + event.reason(),
+                    "POINTS", null, "points:" + event.ledgerId());
+        } catch (Exception ex) {
+            log.warn("积分通知失败 userId={}", event.userId(), ex);
+        }
     }
 
     private static String summary(String value) {

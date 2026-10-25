@@ -22,16 +22,16 @@ public interface NotificationMapper extends BaseMapper<Notification> {
             is_read, read_at, created_at
             """;
 
-    /** 命中 dedupe 唯一键视为已通知，返回 0。 */
+    /** 通知插入（回填 id）；dedupe 冲突由服务层捕获 DuplicateKeyException 处理。 */
     @Insert("""
             INSERT INTO notifications
                 (recipient_id, actor_id, type, title, content, link_type, link_id, dedupe_key, is_read, created_at)
             VALUES
                 (#{recipientId}, #{actorId}, #{type}, #{title}, #{content}, #{linkType}, #{linkId},
                  #{dedupeKey}, 0, #{createdAt})
-            ON DUPLICATE KEY UPDATE id = id
             """)
-    int insertDedup(Notification notification);
+    @org.apache.ibatis.annotations.Options(useGeneratedKeys = true, keyProperty = "id")
+    int insertPlain(Notification notification);
 
     @Select("""
             SELECT

@@ -84,7 +84,7 @@ public class NotificationAppService {
         notification.setCreatedAt(Times.nowUtc());
         int inserted;
         try {
-            inserted = notificationMapper.insertDedup(notification);
+            inserted = notificationMapper.insertPlain(notification);
         } catch (org.springframework.dao.DuplicateKeyException ex) {
             inserted = 0;
         }

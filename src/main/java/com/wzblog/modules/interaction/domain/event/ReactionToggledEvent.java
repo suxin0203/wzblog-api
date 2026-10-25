@@ -7,4 +7,9 @@ import com.wzblog.modules.interaction.domain.ReactionType;
  */
 public record ReactionToggledEvent(Long articleId, Long authorId, Long actorId,
                                    ReactionType type, boolean active) {
+
+    /** 跨模块消费方判断（避免外部触碰本模块枚举）。 */
+    public boolean isLike() {
+        return type == ReactionType.LIKE;
+    }
 }
