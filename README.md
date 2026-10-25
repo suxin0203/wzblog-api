@@ -46,8 +46,8 @@ Java 21 · Spring Boot 3.5 · Spring Security · MyBatis-Plus · MySQL 8 · Redi
 - [x] M3 互动（24 路由，两级评论树/Aho-Corasick 敏感词/幂等 toggle/通知 SSE/计数对账，12 个新增集成测试）
 - [x] M4 积分（22 路由，账本幂等/日上限/反转、并发防超卖、订单状态机/退款回补、称号/调分/对账，13 个新增集成测试）
 - [ ] M5 媒体
-- [ ] M6 AI
+- [x] M6 AI（11 路由，SSE 流式对话/6 只读工具/三层配额/游客令牌/摘要标签建议/后台统计，mock 上游 5 个新增集成测试）
 - [ ] M7 运营
 - [ ] M8 微信（P2 可选）
 
-> 后端开发进行中，`master` 当前包含 M0 + M1 + M2 + M5 + M3 + M4（另含工程债清偿：CI/ArchUnit/JaCoCo/Compose）。启动与测试命令见 [11-本地环境与运行](docs/11-本地环境与运行.md)；前端暂不改动。
+> 后端开发进行中，`master` 当前包含 M0 + M1 + M2 + M5 + M3 + M4 + M6（另含工程债清偿：CI/ArchUnit/JaCoCo/Compose）。启动与测试命令见 [11-本地环境与运行](docs/11-本地环境与运行.md)；前端暂不改动。

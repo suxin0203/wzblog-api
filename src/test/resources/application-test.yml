@@ -28,6 +28,12 @@ wzblog:
     guest-comment-daily-limit: 100000
     guestbook-short-limit: 10000
     guestbook-daily-limit: 100000
+  ai:
+    enabled: true
+    provider: mock
+    ip-minute-quota: 10000
+    daily-user-quota: 10000
+    guest-daily-quota: 10000
   file:
     storage: local
     root: ./target/test-uploads
