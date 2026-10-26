@@ -1,0 +1,8 @@
+${AnsiColor.BRIGHT_CYAN}${AnsiStyle.BOLD}
+██          ██  ██████████  ██      ██  ██████████  ██      ██    ██████    ██      ██
+██          ██  ██          ████    ██        ██    ██      ██  ██      ██  ████    ██
+██    ██    ██  ████████    ██  ██  ██    ██        ██████████  ██████████  ██  ██  ██
+██  ██  ██  ██  ██          ██    ████  ██          ██      ██  ██      ██  ██    ████
+  ██      ██    ██████████  ██      ██  ██████████  ██      ██  ██      ██  ██      ██
+${AnsiStyle.RESET}
+${AnsiColor.YELLOW}        文栈 · Wenzhan Blog · ${applicationName} v${application.version} · Spring Boot ${spring-boot.formatted-version}${AnsiStyle.RESET}

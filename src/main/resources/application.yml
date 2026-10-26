@@ -46,8 +46,8 @@ spring:
   web:
     resources:
       add-mappings: true
-  main:
-    banner-mode: off
+#  main:
+#    banner-mode: off
   task:
     scheduling:
       pool:
