@@ -24,7 +24,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,11 +51,18 @@ public class AiChatOrchestrator {
     private final AiQuotaService quotaService;
     private final AiProperties properties;
     private final ObjectMapper objectMapper;
-    private final ExecutorService executor = Executors.newFixedThreadPool(4, runnable -> {
-        Thread thread = new Thread(runnable, "ai-chat");
-        thread.setDaemon(true);
-        return thread;
-    });
+    /**
+     * 有界队列 + Abort：上游变慢时排队上限 64，超出立即拒绝（映射 429），
+     * 避免无界队列把请求无限堆积成超时雪崩。
+     */
+    private final java.util.concurrent.ThreadPoolExecutor executor =
+            new java.util.concurrent.ThreadPoolExecutor(4, 4, 60, java.util.concurrent.TimeUnit.SECONDS,
+                    new java.util.concurrent.ArrayBlockingQueue<>(64), runnable -> {
+                        Thread thread = new Thread(runnable, "ai-chat");
+                        thread.setDaemon(true);
+                        return thread;
+                    },
+                    new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
 
     public AiChatOrchestrator(AiSessionMapper sessionMapper, AiMessageMapper messageMapper,
                               ChatClient chatClient, AiToolRegistry toolRegistry,
@@ -108,7 +114,13 @@ public class AiChatOrchestrator {
         emitter.onTimeout(() -> quotaService.releaseConcurrency(clientInfo.ip()));
         emitter.onError(error -> quotaService.releaseConcurrency(clientInfo.ip()));
         final String tokenForClient = sessionToken;
-        executor.execute(() -> runConversation(emitter, session, tokenForClient, question));
+        try {
+            executor.execute(() -> runConversation(emitter, session, tokenForClient, question));
+        } catch (java.util.concurrent.RejectedExecutionException ex) {
+            // 有界队列打满：立即释放并发名额并拒绝（失败计 1 次配额是契约既定行为）
+            quotaService.releaseConcurrency(clientInfo.ip());
+            throw new BusinessException(ErrorCode.AI_CONCURRENCY_LIMITED);
+        }
         return emitter;
     }
 

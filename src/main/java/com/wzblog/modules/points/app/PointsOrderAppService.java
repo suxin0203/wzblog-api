@@ -79,13 +79,11 @@ public class PointsOrderAppService {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "quantity 须为 1~10",
                     null);
         }
-        String bodyHash = bodyHash(request);
 
-        // 1. 幂等预检
+        // 1. 幂等预检：请求体任何字段不同都视为冲突（M4 §8.1），不静默返回旧订单
         PointsOrder existing = orderMapper.selectByIdempotency(user.id(), idempotencyKey);
         if (existing != null) {
-            if (!Objects.equals(existing.getGoodsId(), request.goodsId())
-                    || existing.getQuantity() != quantity) {
+            if (bodyChanged(existing, request, quantity)) {
                 throw new BusinessException(ErrorCode.COMMON_IDEMPOTENCY_CONFLICT);
             }
             return new CreatedOrder(toVo(existing, false), false);
@@ -176,7 +174,7 @@ public class PointsOrderAppService {
         if (from != OrderStatus.PENDING && from != OrderStatus.APPROVED) {
             throw new BusinessException(ErrorCode.ORDER_STATE_INVALID);
         }
-        refundAndRestore(order, OrderStatus.CANCELLED, "用户取消", user.id());
+        refundAndRestore(order, OrderStatus.CANCELLED, "用户取消", null, user.id());
         return toVo(orderMapper.selectByOrderNo(orderNo), false);
     }
 
@@ -203,13 +201,14 @@ public class PointsOrderAppService {
                     throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR,
                             "驳回必须填写 adminRemark", null);
                 }
-                refundAndRestore(order, OrderStatus.REJECTED, request.adminRemark(), admin.id());
+                refundAndRestore(order, OrderStatus.REJECTED, request.adminRemark(),
+                        request.adminRemark(), admin.id());
             }
             case CANCELLED -> {
                 requireFrom(from, OrderStatus.PENDING, OrderStatus.APPROVED);
                 refundAndRestore(order, OrderStatus.CANCELLED,
                         request.adminRemark() == null ? "管理员取消" : request.adminRemark(),
-                        admin.id());
+                        request.adminRemark(), admin.id());
             }
             case SHIPPED -> {
                 requireFrom(from, OrderStatus.APPROVED);
@@ -281,16 +280,19 @@ public class PointsOrderAppService {
 
     // ------------------------------------------------------------ 内部
 
-    /** 退款 + 回补库存（锁序：商品 → 账户 → 订单条件更新）。 */
+    /**
+     * 退款 + 回补库存（锁序：商品 → 账户 → 订单条件更新）。
+     * adminRemark 仅管理员操作写入；用户取消传 null，SQL 侧 COALESCE 保持原值不动。
+     */
     private void refundAndRestore(PointsOrder order, OrderStatus to, String reason,
-                                  Long operatorId) {
+                                  String adminRemark, Long operatorId) {
         OrderStatus from = OrderStatus.valueOf(order.getStatus());
         goodsMapper.restoreStock(order.getGoodsId(), order.getQuantity(), Times.nowUtc());
         pointsAppService.post(order.getUserId(), PointsType.REFUND, order.getTotalPoints(),
                 "ORDER", order.getOrderNo(), "order-refund:" + order.getOrderNo(),
                 "订单退款：" + order.getOrderNo(), null);
         int updated = orderMapper.cancelOrReject(order.getId(), from.name(), to.name(), reason,
-                operatorId == null ? null : String.valueOf(reason), Times.nowUtc());
+                adminRemark, Times.nowUtc());
         if (updated == 0) {
             throw new BusinessException(ErrorCode.ORDER_STATE_INVALID);
         }
@@ -372,16 +374,18 @@ public class PointsOrderAppService {
         return builder.toString();
     }
 
-    private String bodyHash(OrderCreateRequest request) {
-        try {
-            String canonical = request.goodsId() + "|" + (request.quantity() == null ? 1
-                    : request.quantity()) + "|" + request.receiverName() + "|"
-                    + request.receiverPhone() + "|" + request.receiverAddress();
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        } catch (Exception ex) {
-            throw new IllegalStateException(ex);
-        }
+    /**
+     * 幂等重放的请求体比对：订单已持久化全部下单字段，逐项对比即可判定
+     * 「同 key 不同请求体」（M4 §8.1），无需额外的 hash 列。
+     */
+    private static boolean bodyChanged(PointsOrder existing, OrderCreateRequest request,
+                                       int quantity) {
+        return !Objects.equals(existing.getGoodsId(), request.goodsId())
+                || existing.getQuantity() != quantity
+                || !Objects.equals(existing.getReceiverName(), request.receiverName())
+                || !Objects.equals(existing.getReceiverPhone(), request.receiverPhone())
+                || !Objects.equals(existing.getReceiverAddress(), request.receiverAddress())
+                || !Objects.equals(existing.getUserRemark(), request.userRemark());
     }
 
     private OrderVO toVo(PointsOrder order, boolean withLogs) {

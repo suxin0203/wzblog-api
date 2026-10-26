@@ -428,6 +428,13 @@ class PointsIntegrationTest extends IdentityTestSupport {
                 token);
         assertThat(cancelled.status()).isEqualTo(200);
         assertThat(cancelled.data().path("status").asText()).isEqualTo("CANCELLED");
+        // 用户取消不得写 admin_remark（回归：曾把 cancelled_reason 误写入 admin_remark）
+        String adminRemark = jdbc.queryForObject(
+                "SELECT admin_remark FROM points_orders WHERE order_no = ?", String.class, orderNo);
+        assertThat(adminRemark).isNull();
+        assertThat(jdbc.queryForObject(
+                "SELECT cancelled_reason FROM points_orders WHERE order_no = ?",
+                String.class, orderNo)).isEqualTo("用户取消");
         awaitBalance(userId, 105); // 退款 +10
         Integer stock = jdbc.queryForObject("SELECT stock FROM points_goods WHERE id = ?",
                 Integer.class, goodsId);
@@ -527,5 +534,68 @@ class PointsIntegrationTest extends IdentityTestSupport {
         assertThat(detail.status()).isEqualTo(200);
         HttpResult titles = get("/api/v1/titles", null);
         assertThat(titles.status()).isEqualTo(200);
+    }
+
+    @Test
+    void adminRejectWritesRealAdminRemark() {
+        HttpResult goods = createGoods(adminToken(), Map.of("stock", 1, "pointsPrice", 10));
+        long goodsId = goods.data().path("id").asLong();
+        String username = unique("rj");
+        register(username, PASSWORD, null);
+        long userId = userId(username);
+        adjust(adminToken(), userId, 100, "备货");
+        awaitBalance(userId, 105);
+        String token = accessToken(username, PASSWORD);
+        HttpResult created = order(token, "rj-" + unique("k"),
+                Map.of("goodsId", goodsId, "quantity", 1, "receiverName", "孙八",
+                        "receiverPhone", "13400134000", "receiverAddress", "南京"));
+        String orderNo = created.data().path("orderNo").asText();
+
+        HttpResult rejected = post("/api/v1/admin/points/orders/" + orderNo + "/transition",
+                Map.of("toStatus", "REJECTED", "adminRemark", "库存不足，请联系客服"),
+                adminToken());
+        assertThat(rejected.status()).isEqualTo(200);
+        // 回归：admin_remark 必须是管理员真实备注，而不是 cancelled_reason 的副本
+        var row = jdbc.queryForMap(
+                "SELECT admin_remark, cancelled_reason FROM points_orders WHERE order_no = ?",
+                orderNo);
+        assertThat(row.get("admin_remark")).isEqualTo("库存不足，请联系客服");
+        assertThat(row.get("cancelled_reason")).isEqualTo("库存不足，请联系客服");
+    }
+
+    @Test
+    void sameIdempotencyKeyWithDifferentAddressRejected() {
+        HttpResult goods = createGoods(adminToken(), Map.of("stock", 5, "pointsPrice", 10));
+        long goodsId = goods.data().path("id").asLong();
+        String username = unique("ia");
+        register(username, PASSWORD, null);
+        long userId = userId(username);
+        adjust(adminToken(), userId, 200, "备货");
+        awaitBalance(userId, 205);
+        String token = accessToken(username, PASSWORD);
+        String key = "ia-" + unique("k");
+
+        HttpResult first = order(token, key, Map.of("goodsId", goodsId, "quantity", 1,
+                "receiverName", "张三", "receiverPhone", "13800138000",
+                "receiverAddress", "北京市海淀区"));
+        assertThat(first.status()).isEqualTo(201);
+
+        // 回归：同 key、同 goodsId、同 quantity、仅换收货地址 → 必须冲突而非静默返回旧订单
+        HttpResult replay = order(token, key, Map.of("goodsId", goodsId, "quantity", 1,
+                "receiverName", "张三", "receiverPhone", "13800138000",
+                "receiverAddress", "上海市浦东新区"));
+        assertThat(replay.status()).isEqualTo(409);
+        assertThat(replay.code()).isEqualTo("COMMON_IDEMPOTENCY_CONFLICT");
+
+        // 完全一致的请求体仍幂等返回同一订单
+        HttpResult identical = order(token, key, Map.of("goodsId", goodsId, "quantity", 1,
+                "receiverName", "张三", "receiverPhone", "13800138000",
+                "receiverAddress", "北京市海淀区"));
+        assertThat(identical.status()).isEqualTo(200);
+        assertThat(identical.data().path("orderNo").asText())
+                .isEqualTo(first.data().path("orderNo").asText());
+        Long orders = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM points_orders WHERE user_id = ?", Long.class, userId);
+        assertThat(orders).isEqualTo(1L);
     }
 }
