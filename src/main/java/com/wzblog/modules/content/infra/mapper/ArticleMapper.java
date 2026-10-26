@@ -334,25 +334,29 @@ public interface ArticleMapper extends BaseMapper<Article> {
     int unpublish(@Param("id") Long id);
 
     @Update("""
-            UPDATE articles SET is_pinned = 1, updated_at = UTC_TIMESTAMP(3)
+            UPDATE articles SET is_pinned = 1, version = version + 1,
+              updated_at = UTC_TIMESTAMP(3)
             WHERE id = #{id} AND deleted_at IS NULL AND status = 'PUBLISHED'
             """)
     int pin(@Param("id") Long id);
 
     @Update("""
-            UPDATE articles SET is_pinned = 0, updated_at = UTC_TIMESTAMP(3)
+            UPDATE articles SET is_pinned = 0, version = version + 1,
+              updated_at = UTC_TIMESTAMP(3)
             WHERE id = #{id} AND deleted_at IS NULL
             """)
     int unpin(@Param("id") Long id);
 
     @Update("""
-            UPDATE articles SET deleted_at = UTC_TIMESTAMP(3), is_pinned = 0, updated_at = UTC_TIMESTAMP(3)
+            UPDATE articles SET deleted_at = UTC_TIMESTAMP(3), is_pinned = 0,
+              version = version + 1, updated_at = UTC_TIMESTAMP(3)
             WHERE id = #{id} AND deleted_at IS NULL
             """)
     int softDelete(@Param("id") Long id);
 
     @Update("""
-            UPDATE articles SET deleted_at = NULL, updated_at = UTC_TIMESTAMP(3)
+            UPDATE articles SET deleted_at = NULL, version = version + 1,
+              updated_at = UTC_TIMESTAMP(3)
             WHERE id = #{id} AND deleted_at IS NOT NULL
             """)
     int restore(@Param("id") Long id);

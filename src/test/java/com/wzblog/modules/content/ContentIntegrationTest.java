@@ -526,4 +526,39 @@ class ContentIntegrationTest extends IdentityTestSupport {
         }
         return ids;
     }
+
+    // ------------------------------------------------------------ 缓存一致性
+
+    @Test
+    void detailCacheInvalidatedByPinAndUpdate() {
+        String token = adminToken();
+        HttpResult created = createArticle(token, articleBody(unique("cache"), "# 旧标题内容"));
+        long id = created.data().path("id").asLong();
+        String slug = created.data().path("slug").asText();
+        assertThat(post("/api/v1/articles/" + id + "/publish", Map.of(), token)
+                .status()).isEqualTo(200);
+
+        // 第一次读：写热缓存
+        HttpResult first = get("/api/v1/articles/" + slug, null);
+        assertThat(first.status()).isEqualTo(200);
+        assertThat(first.data().path("isPinned").asBoolean()).isFalse();
+        String cacheKeyPattern = "content:article:" + id + ":v*";
+        assertThat(redis.keys(cacheKeyPattern)).isNotEmpty();
+
+        // 置顶：pin 必须递增 version 轮换缓存键，读者立刻看到新置顶状态（回归：曾最长 10 分钟脏读）
+        assertThat(post("/api/v1/articles/" + id + "/pin", Map.of(), token).status()).isEqualTo(200);
+        HttpResult afterPin = get("/api/v1/articles/" + slug, null);
+        assertThat(afterPin.data().path("isPinned").asBoolean())
+                .as("pin 后详情不得返回缓存的旧置顶状态").isTrue();
+
+        // 更新内容：同样立刻生效
+        HttpResult editVo = get("/api/v1/articles/" + id + "/edit", token);
+        int version = editVo.data().path("version").asInt();
+        HttpResult updated = put("/api/v1/articles/" + id,
+                articleBody(unique("cache2"), "# 新标题内容", Map.of("version", version)), token);
+        assertThat(updated.status()).as("update: %s", updated.body()).isEqualTo(200);
+        HttpResult afterUpdate = get("/api/v1/articles/" + slug, null);
+        assertThat(afterUpdate.data().path("title").asText()).startsWith("cache2");
+        assertThat(afterUpdate.data().path("html").asText()).contains("新标题内容");
+    }
 }

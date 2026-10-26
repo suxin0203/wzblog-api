@@ -2,6 +2,7 @@ package com.wzblog.modules.ai.infra.redis;
 
 import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.error.ErrorCode;
+import com.wzblog.common.ratelimit.SlidingWindowRateLimiter;
 import com.wzblog.modules.ai.infra.config.AiProperties;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -9,41 +10,38 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * AI 配额（M6 §11）：IP 分钟窗、登录用户/游客 IP 日窗，固定窗口 INCR（与 M3 偏差口径一致）。
+ * AI 配额（M6 §11）：IP 分钟窗 + 登录用户/游客 IP 24h 滚动日窗，
+ * 滑动窗口 ZSET + Lua（公共组件）。并发 SSE 为独立计数器（INCR + 90s TTL 兜底）。
  */
 @Component
 public class AiQuotaService {
 
     private final StringRedisTemplate redis;
+    private final SlidingWindowRateLimiter limiter;
     private final AiProperties properties;
 
-    public AiQuotaService(StringRedisTemplate redis, AiProperties properties) {
+    public AiQuotaService(StringRedisTemplate redis, SlidingWindowRateLimiter limiter,
+                          AiProperties properties) {
         this.redis = redis;
+        this.limiter = limiter;
         this.properties = properties;
     }
 
     public void checkAndConsume(String ip, Long userId) {
-        long now = System.currentTimeMillis();
-        String minuteKey = "ai:rl:ip:%s:%d".formatted(ip, now / 60_000);
-        Long minute = redis.opsForValue().increment(minuteKey);
-        if (minute != null && minute == 1L) {
-            redis.expire(minuteKey, Duration.ofSeconds(120));
-        }
-        if (minute != null && minute > properties.getIpMinuteQuota()) {
+        var minute = limiter.check("ai:rl:ip:" + ip, Duration.ofSeconds(60),
+                properties.getIpMinuteQuota());
+        if (!minute.allowed()) {
             throw new BusinessException(ErrorCode.AI_QUOTA_EXCEEDED, "提问过于频繁，请稍后再试",
-                    60L);
+                    minute.retryAfterSeconds());
         }
 
         int dailyLimit = userId != null ? properties.getDailyUserQuota()
                 : properties.getGuestDailyQuota();
-        String dailyKey = (userId != null ? "ai:rl:user:" + userId : "ai:rl:guest:" + ip)
-                + ":" + (now / 86_400_000);
-        Long daily = redis.opsForValue().increment(dailyKey);
-        if (daily != null && daily == 1L) {
-            redis.expire(dailyKey, Duration.ofDays(2));
-        }
-        if (daily != null && daily > dailyLimit) {
-            throw new BusinessException(ErrorCode.AI_QUOTA_EXCEEDED, "今日提问次数已用完", 3600L);
+        String dailyKey = userId != null ? "ai:rl:user:" + userId : "ai:rl:guest:" + ip;
+        var daily = limiter.check(dailyKey, Duration.ofHours(24), dailyLimit);
+        if (!daily.allowed()) {
+            throw new BusinessException(ErrorCode.AI_QUOTA_EXCEEDED, "今日提问次数已用完",
+                    Math.min(daily.retryAfterSeconds(), 86_400L));
         }
     }
 
@@ -80,19 +78,14 @@ public class AiQuotaService {
     }
 
     public QuotaWindow minuteUsage(String ip) {
-        String key = "ai:rl:ip:%s:%d".formatted(ip, System.currentTimeMillis() / 60_000);
-        return new QuotaWindow(properties.getIpMinuteQuota(), parse(redis.opsForValue().get(key)));
+        return new QuotaWindow(properties.getIpMinuteQuota(),
+                limiter.currentUsage("ai:rl:ip:" + ip, Duration.ofSeconds(60)));
     }
 
     public QuotaWindow dailyUsage(String ip, Long userId) {
         int limit = userId != null ? properties.getDailyUserQuota()
                 : properties.getGuestDailyQuota();
-        String key = (userId != null ? "ai:rl:user:" + userId : "ai:rl:guest:" + ip)
-                + ":" + (System.currentTimeMillis() / 86_400_000);
-        return new QuotaWindow(limit, parse(redis.opsForValue().get(key)));
-    }
-
-    private static long parse(String value) {
-        return value == null ? 0 : Long.parseLong(value);
+        String key = userId != null ? "ai:rl:user:" + userId : "ai:rl:guest:" + ip;
+        return new QuotaWindow(limit, limiter.currentUsage(key, Duration.ofHours(24)));
     }
 }
