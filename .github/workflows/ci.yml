@@ -41,7 +41,14 @@ jobs:
         run: mvn -B -ntp verify
         env:
           WZBLOG_TESTCONTAINERS: "1"
-      - name: Upload coverage
+      - name: Upload coverage to Codecov
+        if: always()
+        continue-on-error: true
+        uses: codecov/codecov-action@v5
+        with:
+          files: target/site/jacoco/jacoco.xml
+          fail_ci_error: false
+      - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:

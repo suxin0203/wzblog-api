@@ -5,6 +5,7 @@ import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.media.FileBizType;
 import com.wzblog.common.media.FileReferencePort;
+import com.wzblog.common.ratelimit.SlidingWindowRateLimiter;
 import com.wzblog.common.security.Role;
 import com.wzblog.common.util.Times;
 import com.wzblog.common.web.CurrentUser;
@@ -62,11 +63,13 @@ public class FileAppService implements FileReferencePort {
     private final UrlSigner urlSigner;
     private final FileStorageProperties properties;
     private final StringRedisTemplate redis;
+    private final SlidingWindowRateLimiter rateLimiter;
     private final ApplicationEventPublisher eventPublisher;
 
     public FileAppService(FileMapper fileMapper, ObjectStorage objectStorage,
                           ImageAnalyzer imageAnalyzer, UrlSigner urlSigner,
                           FileStorageProperties properties, StringRedisTemplate redis,
+                          SlidingWindowRateLimiter rateLimiter,
                           ApplicationEventPublisher eventPublisher) {
         this.fileMapper = fileMapper;
         this.objectStorage = objectStorage;
@@ -74,6 +77,7 @@ public class FileAppService implements FileReferencePort {
         this.urlSigner = urlSigner;
         this.properties = properties;
         this.redis = redis;
+        this.rateLimiter = rateLimiter;
         this.eventPublisher = eventPublisher;
     }
 
@@ -407,13 +411,11 @@ public class FileAppService implements FileReferencePort {
     }
 
     private void checkPresignRate(Long userId) {
-        String key = "wzblog:media:presign-rate:" + userId;
-        Long count = redis.opsForValue().increment(key);
-        if (count != null && count == 1L) {
-            redis.expire(key, Duration.ofHours(1));
-        }
-        if (count != null && count > properties.getPresignLimitPerHour()) {
-            throw new BusinessException(ErrorCode.COMMON_RATE_LIMITED, "上传过于频繁，请稍后再试", 3600L);
+        var verdict = rateLimiter.check("media:rl:presign:" + userId, Duration.ofHours(1),
+                properties.getPresignLimitPerHour());
+        if (!verdict.allowed()) {
+            throw new BusinessException(ErrorCode.COMMON_RATE_LIMITED, "上传过于频繁，请稍后再试",
+                    verdict.retryAfterSeconds());
         }
     }
 

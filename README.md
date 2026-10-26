@@ -1,5 +1,9 @@
 # 文栈博客 · Java 后端（WzBlog Backend）
 
+<!-- 推送到 GitHub 后把 <OWNER> 替换为实际仓库所有者，徽章即生效 -->
+[![CI](https://github.com/<OWNER>/wzblog-server/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/wzblog-server/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/<OWNER>/wzblog-server/branch/master/graph/badge.svg)](https://codecov.io/gh/<OWNER>/wzblog-server)
+
 > 基于 **Spring Boot 3.5 / JDK 21** 的模块化单体博客后端：Markdown 内容、评论互动、积分商城、媒体管理、AI 站内助手与运营看板，形成完整闭环。作为 Java 后端实习简历项目开发，所有能力均可测试验证。
 
 ## 快速开始
