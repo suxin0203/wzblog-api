@@ -561,4 +561,29 @@ class ContentIntegrationTest extends IdentityTestSupport {
         assertThat(afterUpdate.data().path("title").asText()).startsWith("cache2");
         assertThat(afterUpdate.data().path("html").asText()).contains("新标题内容");
     }
+
+    @Test
+    void detailCacheDoesNotFreezeCounters() {
+        String token = adminToken();
+        HttpResult created = createArticle(token, articleBody(unique("cnt"), "计数测试"));
+        long id = created.data().path("id").asLong();
+        String slug = created.data().path("slug").asText();
+        assertThat(post("/api/v1/articles/" + id + "/publish", Map.of(), token)
+                .status()).isEqualTo(200);
+
+        // 热缓存：此时 likeCount=0
+        HttpResult warm = get("/api/v1/articles/" + slug, null);
+        assertThat(warm.data().path("likeCount").asInt()).isZero();
+
+        // 点赞后再次读详情：命中缓存路径，但计数必须立即反映（回归：曾冻结最长 10 分钟）
+        put("/api/v1/articles/" + id + "/reactions/like", Map.of(), token);
+        HttpResult afterLike = get("/api/v1/articles/" + slug, null);
+        assertThat(afterLike.data().path("likeCount").asInt())
+                .as("缓存命中路径的 likeCount 必须来自新鲜行").isEqualTo(1);
+
+        // 取消点赞同样立即回落
+        delete("/api/v1/articles/" + id + "/reactions/like", token);
+        HttpResult afterUnlike = get("/api/v1/articles/" + slug, null);
+        assertThat(afterUnlike.data().path("likeCount").asInt()).isZero();
+    }
 }

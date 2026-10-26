@@ -73,6 +73,13 @@ public class GlobalExceptionHandler {
                 .body(Result.fail(ErrorCode.COMMON_VALIDATION_ERROR, "请求参数格式错误"));
     }
 
+    /** multipart 超过 spring.servlet.multipart 上限（含非媒体路由的大 body）：转业务码而非 500。 */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<Result<Object>> handleMaxUpload(Exception ex) {
+        return ResponseEntity.badRequest()
+                .body(Result.fail(ErrorCode.FILE_SIZE_EXCEEDED, "图片不能超过 5MB"));
+    }
+
     @ExceptionHandler({
             NoResourceFoundException.class,
             NoHandlerFoundException.class,

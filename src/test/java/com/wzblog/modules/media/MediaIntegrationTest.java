@@ -41,6 +41,9 @@ class MediaIntegrationTest extends IdentityTestSupport {
     @Autowired
     private TestRestTemplate rest;
 
+    @org.springframework.beans.factory.annotation.Value("${local.server.port}")
+    private int serverPort;
+
     // ------------------------------------------------------------ 工具
 
     private byte[] pngBytes(int width, int height) throws Exception {
@@ -441,5 +444,72 @@ class MediaIntegrationTest extends IdentityTestSupport {
         } catch (Exception ex) {
             throw new IllegalStateException(ex);
         }
+    }
+
+    @Test
+    void identicalBytesAcrossUsersBothSucceed() throws Exception {
+        // 回归：全局 sha256 去重曾把用户 B 的同字节上传误判为"复用他人文件"(403)
+        byte[] png = pngBytes(24, 24);
+        String first = unique("du1");
+        register(first, PASSWORD, null);
+        Parsed uploadA = upload(accessToken(first, PASSWORD), "me.png",
+                "image/png", png, "AVATAR");
+        assertThat(uploadA.status()).isEqualTo(200);
+
+        String second = unique("du2");
+        register(second, PASSWORD, null);
+        Parsed uploadB = upload(accessToken(second, PASSWORD), "me.png",
+                "image/png", png, "AVATAR");
+        assertThat(uploadB.status()).as("body=%s", uploadB.body()).isEqualTo(200);
+        assertThat(uploadB.data().path("objectKey").asText())
+                .isNotEqualTo(uploadA.data().path("objectKey").asText());
+        Long rows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM files WHERE sha256 = ?", Long.class, sha256Hex(png));
+        assertThat(rows).isEqualTo(2L); // 各自成行，不做跨用户别名
+    }
+
+    @Test
+    void oversizeMultipartReturnsBusinessErrorNot500() {
+        // 回归：multipart 上限未配置时 1~5MB 即 500；这里打 >5MB 验证业务码。
+        // 手工构造 multipart 并带 Content-Length（分块传输会被服务端掐断，拿不到响应）
+        byte[] tooBig = new byte[6 * 1024 * 1024];
+        new java.util.Random().nextBytes(tooBig);
+        String boundary = "----wztest" + unique("b");
+        String head = "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\"big.png\"\r\n"
+                + "Content-Type: image/png\r\n\r\n";
+        String tail = "\r\n--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"bizType\"\r\n\r\n"
+                + "CONTENT_IMAGE\r\n--" + boundary + "--\r\n";
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        try {
+            out.write(head.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.write(tooBig);
+            out.write(tail.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException(ex);
+        }
+        // JDK HttpClient：byte[] body 自动携带 Content-Length（TestRestTemplate 走分块会被掐断）
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("http://localhost:" + serverPort + "/api/v1/files/upload"))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .header("Authorization", "Bearer " + adminToken())
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofByteArray(out.toByteArray()))
+                .build();
+        java.net.http.HttpResponse<String> response;
+        try {
+            response = java.net.http.HttpClient.newHttpClient().send(request,
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+        } catch (java.io.IOException | InterruptedException ex) {
+            throw new IllegalStateException(ex);
+        }
+        JsonNode node = null;
+        try {
+            node = objectMapper.readTree(response.body());
+        } catch (Exception ignored) {
+        }
+        Parsed result = new Parsed(response.statusCode(), node);
+        assertThat(result.status()).isEqualTo(400);
+        assertThat(result.code()).isEqualTo("FILE_SIZE_EXCEEDED");
     }
 }

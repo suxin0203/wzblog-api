@@ -94,34 +94,48 @@ public class AiChatOrchestrator {
         if (!quotaService.tryAcquireConcurrency(clientInfo.ip())) {
             throw new BusinessException(ErrorCode.AI_CONCURRENCY_LIMITED);
         }
-
-        boolean newSession = sessionId == null || sessionId.isBlank();
-        AiSession session = newSession ? createSession(user, question)
-                : resolveSession(user, guestToken, sessionId);
-        String sessionToken = null;
-        if (session.getUserId() == null) {
-            if (newSession) {
-                sessionToken = guestSessionStore.issue(session.getId());
+        // 名额生命周期：onTimeout/onError 之后 Spring 还会触发 onCompletion，
+        // 三个回调都指向同一释放器并以 CAS 保证只释放一次；回调注册前的异常路径由外层 catch 兜底
+        java.util.concurrent.atomic.AtomicBoolean released =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        Runnable releaseOnce = () -> {
+            if (released.compareAndSet(false, true)) {
+                quotaService.releaseConcurrency(clientInfo.ip());
             }
-            // 续聊游客会话：令牌已在 resolveSession 校验
-        }
+        };
 
-        // 步骤 2：落 USER 消息
-        insertUserMessage(session.getId(), question);
-
-        SseEmitter emitter = new SseEmitter(60_000L);
-        emitter.onCompletion(() -> quotaService.releaseConcurrency(clientInfo.ip()));
-        emitter.onTimeout(() -> quotaService.releaseConcurrency(clientInfo.ip()));
-        emitter.onError(error -> quotaService.releaseConcurrency(clientInfo.ip()));
-        final String tokenForClient = sessionToken;
         try {
-            executor.execute(() -> runConversation(emitter, session, tokenForClient, question));
-        } catch (java.util.concurrent.RejectedExecutionException ex) {
-            // 有界队列打满：立即释放并发名额并拒绝（失败计 1 次配额是契约既定行为）
-            quotaService.releaseConcurrency(clientInfo.ip());
-            throw new BusinessException(ErrorCode.AI_CONCURRENCY_LIMITED);
+            boolean newSession = sessionId == null || sessionId.isBlank();
+            AiSession session = newSession ? createSession(user, question)
+                    : resolveSession(user, guestToken, sessionId);
+            String sessionToken = null;
+            if (session.getUserId() == null) {
+                if (newSession) {
+                    sessionToken = guestSessionStore.issue(session.getId());
+                }
+                // 续聊游客会话：令牌已在 resolveSession 校验
+            }
+
+            // 步骤 2：落 USER 消息
+            insertUserMessage(session.getId(), question);
+
+            SseEmitter emitter = new SseEmitter(60_000L);
+            emitter.onCompletion(releaseOnce);
+            emitter.onTimeout(releaseOnce);
+            emitter.onError(error -> releaseOnce.run());
+            final String tokenForClient = sessionToken;
+            try {
+                executor.execute(() -> runConversation(emitter, session, tokenForClient, question));
+            } catch (java.util.concurrent.RejectedExecutionException ex) {
+                // 有界队列打满（失败计 1 次配额是契约既定行为），由外层统一释放后转 429
+                throw new BusinessException(ErrorCode.AI_CONCURRENCY_LIMITED);
+            }
+            return emitter;
+        } catch (RuntimeException ex) {
+            // 获取名额后、回调注册前失败（如 resolveSession 403/404/410）：立即释放，不等 90s TTL
+            releaseOnce.run();
+            throw ex;
         }
-        return emitter;
     }
 
     private void runConversation(SseEmitter emitter, AiSession session, String sessionToken,
@@ -136,15 +150,17 @@ public class AiChatOrchestrator {
                             : ""));
 
             long startedAt = System.currentTimeMillis();
-            List<ChatClient.ChatMessage> context = buildContext(session.getId(), question);
+            List<ChatClient.ChatMessage> context = buildContext(session.getId());
 
             // 工具轮（最多 2 轮）
+            boolean toolsUsed = false;
             for (int round = 0; round < 2; round++) {
                 ChatClient.ChatCompletion completion = chatClient.complete(context,
                         toolRegistry.specs());
                 if (completion.toolCalls() == null || completion.toolCalls().isEmpty()) {
                     break;
                 }
+                toolsUsed = true;
                 for (ChatClient.ToolCall call : completion.toolCalls()) {
                     send(emitter, "tool", Map.of("name", call.name(),
                             "brief", "正在检索站内数据", "status", "start"));
@@ -156,8 +172,10 @@ public class AiChatOrchestrator {
                     insertToolMessage(session.getId(), call, result);
                 }
             }
-            // 超轮收口提示
-            context.add(ChatClient.ChatMessage.system("信息已足够，请直接基于已有结果回答。"));
+            // 超轮收口提示：仅在确实用过工具时追加，措辞与实际一致
+            if (toolsUsed) {
+                context.add(ChatClient.ChatMessage.system("信息已足够，请直接基于已有结果回答。"));
+            }
 
             // 步骤 3：ASSISTANT 占位
             AiMessage placeholder = new AiMessage();
@@ -268,7 +286,12 @@ public class AiChatOrchestrator {
         sessionMapper.bumpMessageCount(sessionId, 1, Times.nowUtc());
     }
 
-    private List<ChatClient.ChatMessage> buildContext(String sessionId, String question) {
+    /**
+     * 上下文 = 系统提示词 + 最近 10 条历史（TOOL 行折叠为结果摘要）。
+     * 新提问已在 chat() 步骤 2 落库，selectRecentForContext 必然包含它——
+     * 这里不得再手动追加，否则模型收到重复问题（浪费 token 且可能干扰回答）。
+     */
+    private List<ChatClient.ChatMessage> buildContext(String sessionId) {
         List<ChatClient.ChatMessage> context = new ArrayList<>();
         context.add(ChatClient.ChatMessage.system(SYSTEM_PROMPT));
         List<AiMessage> recent = messageMapper.selectRecentForContext(sessionId, 10);
@@ -282,7 +305,6 @@ public class AiChatOrchestrator {
                         history.getContent()));
             }
         }
-        context.add(ChatClient.ChatMessage.user(question));
         return context;
     }
 
