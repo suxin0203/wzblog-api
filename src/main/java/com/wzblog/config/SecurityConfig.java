@@ -58,6 +58,18 @@ public class SecurityConfig {
             "/api/v1/titles"
     };
 
+    private static final String[] PUBLIC_LEGACY_COMPAT_PATHS = {
+            // M8 兼容层（旧小程序协议，docs/13 v2）：/users/me 鉴权由过滤器输出 HTTP 401
+            "/qr-login/**",
+            "/miniapp/**",
+            "/wechat/**",
+            "/users/captcha",
+            "/users/register",
+            "/users/login",
+            "/users/refresh",
+            "/users/me"
+    };
+
     private static final String[] PUBLIC_OPERATION_PATHS = {
             "/api/v1/banners",
             "/api/v1/friend-links",
@@ -116,6 +128,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/points/goods/*").permitAll()
                         .requestMatchers(PUBLIC_AI_PATHS).permitAll()
                         .requestMatchers(PUBLIC_OPERATION_PATHS).permitAll()
+                        .requestMatchers(PUBLIC_LEGACY_COMPAT_PATHS).permitAll()
                         // 未映射的路径放行，交由 MVC 输出 404（避免未知路径被 401 掩盖）
                         .requestMatchers(unmappedRequest(handlerMappingProvider)).permitAll()
                         .requestMatchers("/api/v1/admin/users/**").hasRole("ADMIN")

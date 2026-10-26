@@ -28,6 +28,10 @@ wzblog:
     guest-comment-daily-limit: 100000
     guestbook-short-limit: 10000
     guestbook-daily-limit: 100000
+  wechat:
+    provider: mock
+    session-ttl-minutes: 5
+    bind-ttl-minutes: 5
   ai:
     enabled: true
     provider: mock
