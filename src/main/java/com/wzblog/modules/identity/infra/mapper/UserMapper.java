@@ -13,6 +13,12 @@ public interface UserMapper extends BaseMapper<User> {
     @Select("SELECT id FROM users WHERE id = #{id} FOR UPDATE")
     Long lockById(@Param("id") Long id);
 
+    @Select("SELECT * FROM users WHERE openid = #{openid} LIMIT 1")
+    User selectByOpenid(@Param("openid") String openid);
+
+    @Select("SELECT * FROM users WHERE unionid = #{unionid} LIMIT 1")
+    User selectByUnionid(@Param("unionid") String unionid);
+
     /** 统计除指定用户外仍可用的 ADMIN 数量（最后一个管理员保护）。 */
     @Select("""
             SELECT COUNT(*) FROM users

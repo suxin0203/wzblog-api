@@ -181,7 +181,23 @@ public class AuthAppService {
         }
 
         attemptStore.clearFailures(usernameHash);
+        auditWriter.recordSuccess(user.getId(), username, client);
+        return issueTokens(user.getId(), client);
+    }
 
+    /**
+     * 签发双 Token 的统一入口（M8 微信登录/扫码换票复用）：
+     * 更新登录时间 → 新建 refresh family → 签发 access → 每日首登事件。
+     */
+    @Transactional
+    public TokenPairVO issueTokens(Long userId, ClientInfo client) {
+        User user = userMapper.selectById(userId);
+        if (user == null || user.isDeleted()) {
+            throw new BusinessException(ErrorCode.AUTH_REFRESH_INVALID);
+        }
+        if (user.getStatus() == UserStatus.DISABLED) {
+            throw new BusinessException(ErrorCode.AUTH_ACCOUNT_DISABLED);
+        }
         LocalDateTime nowUtc = Times.nowUtc();
         userMapper.update(null, new LambdaUpdateWrapper<User>()
                 .eq(User::getId, user.getId())
@@ -190,8 +206,6 @@ public class AuthAppService {
                 .set(User::getUpdatedAt, nowUtc));
 
         IssuedRefresh refresh = createRefreshToken(user.getId(), UUID.randomUUID().toString(), null, client, nowUtc);
-        auditWriter.recordSuccess(user.getId(), username, client);
-
         JwtService.IssuedAccessToken access = jwtService.issue(user.getId(), user.getRole());
         boolean firstLoginOfDay = attemptStore.markFirstLoginOfDay(user.getId());
         if (firstLoginOfDay) {
