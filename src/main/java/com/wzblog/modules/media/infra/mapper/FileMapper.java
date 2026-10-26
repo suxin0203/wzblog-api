@@ -31,17 +31,20 @@ public interface FileMapper extends BaseMapper<FileEntry> {
     @Select("SELECT " + COLUMNS + " FROM files WHERE object_key = #{objectKey} LIMIT 1")
     FileEntry selectByObjectKey(@Param("objectKey") String objectKey);
 
-    /** 去重查询：同 sha256 + size 的可用文件（ACTIVE/ORPHAN）。 */
+    /** 去重查询：同 uploader 下同 sha256 + size 的可用文件（ACTIVE/ORPHAN）。
+     *  限定上传者：跨用户字节相同各自成行，避免 ensureOwnerAndBiz 把合法上传误判为"复用他人文件"。 */
     @Select("""
             SELECT
             """ + COLUMNS + """
             FROM files
             WHERE sha256 = #{sha256} AND size_bytes = #{sizeBytes}
               AND status IN ('ACTIVE', 'ORPHAN')
+              AND uploader_id = #{uploaderId}
             ORDER BY id
             LIMIT 1
             """)
-    FileEntry selectDedupCandidate(@Param("sha256") String sha256, @Param("sizeBytes") Long sizeBytes);
+    FileEntry selectDedupCandidate(@Param("sha256") String sha256, @Param("sizeBytes") Long sizeBytes,
+                                   @Param("uploaderId") Long uploaderId);
 
     /** TEMP → ACTIVE，写入探测结果；条件更新保证并发确认仅一次生效。 */
     @Update("""

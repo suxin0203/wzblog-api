@@ -47,6 +47,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -189,11 +190,33 @@ public class ArticleReadService {
         assertVisible(article, currentUser);
         ArticleDetailVO cached = readCache(article);
         if (cached != null) {
-            return cached;
+            return withFreshCounters(cached, article);
         }
         ArticleDetailVO detail = articleAssembler.toDetail(article);
         writeCache(article, detail);
         return detail;
+    }
+
+    /**
+     * 缓存体不承载易变计数：命中后用本次为可见性判断查出的新鲜行覆盖四个计数字段。
+     * <p>计数 UPDATE 有意不递增 version（否则每次浏览都轮换键，命中率归零），
+     * 因此版本键只保证内容/元数据的一致性；view/like/favorite/comment 计数
+     * 永远来自当次 DB 读——这行数据反正是 detail() 必查的，覆盖近乎零成本。</p>
+     */
+    private ArticleDetailVO withFreshCounters(ArticleDetailVO cached, Article article) {
+        boolean unchanged = Objects.equals(cached.viewCount(), article.getViewCount())
+                && Objects.equals(cached.likeCount(), article.getLikeCount())
+                && Objects.equals(cached.favoriteCount(), article.getFavoriteCount())
+                && Objects.equals(cached.commentCount(), article.getCommentCount());
+        if (unchanged) {
+            return cached;
+        }
+        return new ArticleDetailVO(cached.id(), cached.title(), cached.slug(), cached.summary(),
+                cached.coverKey(), cached.category(), cached.tags(), cached.author(),
+                article.getViewCount(), article.getLikeCount(), article.getFavoriteCount(),
+                article.getCommentCount(), cached.isPinned(), cached.readingSeconds(),
+                cached.publishedAt(), cached.html(), cached.toc(), cached.allowComment(),
+                cached.visibility(), cached.createdAt(), cached.updatedAt());
     }
 
     public ArticleEditVO edit(Long id) {

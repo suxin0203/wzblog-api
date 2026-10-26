@@ -1,6 +1,9 @@
 server:
   port: ${SERVER_PORT:8021}
   shutdown: graceful
+  tomcat:
+    # 拒绝超大 multipart 时仍读完整请求体再回错误（默认 2MB 会直接掐连接，客户端拿不到 4xx JSON）
+    max-swallow-size: 8MB
 
 spring:
   application:
@@ -35,6 +38,11 @@ spring:
       write-dates-as-timestamps: false
   mvc:
     throw-exception-if-no-handler-found: true
+  servlet:
+    multipart:
+      # 与 wzblog.file.max-size-bytes(5MB) 对齐；Boot 默认 1MB 会把 1~5MB 上传打成 500
+      max-file-size: 5MB
+      max-request-size: 6MB
   web:
     resources:
       add-mappings: true

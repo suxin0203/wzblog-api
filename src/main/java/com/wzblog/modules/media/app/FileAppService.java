@@ -165,7 +165,8 @@ public class FileAppService implements FileReferencePort {
         ImageAnalyzer.ImageMeta meta = imageAnalyzer.analyze(bytes);
         String sha256 = sha256Hex(bytes);
 
-        FileEntry existing = fileMapper.selectDedupCandidate(sha256, (long) bytes.length);
+        FileEntry existing = fileMapper.selectDedupCandidate(sha256, (long) bytes.length,
+                user.id());
         if (existing != null) {
             ensureOwnerAndBiz(existing, user, bizType);
             return toVo(existing);
@@ -234,7 +235,8 @@ public class FileAppService implements FileReferencePort {
         }
         String sha256 = sha256Hex(bytes);
 
-        FileEntry canonical = fileMapper.selectDedupCandidate(sha256, (long) bytes.length);
+        FileEntry canonical = fileMapper.selectDedupCandidate(sha256, (long) bytes.length,
+                entry.getUploaderId()); // 以被确认行的上传者为去重域（ADMIN 代确认时不跨域）
         if (canonical != null && !canonical.getId().equals(entry.getId())) {
             ensureOwnerAndBiz(canonical, user, FileBizType.valueOf(entry.getBizType()));
             markDeletedAndRemoveObject(entry);

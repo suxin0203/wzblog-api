@@ -36,7 +36,13 @@ public class OpenAiCompatChatClient implements ChatClient {
                                   RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.objectMapper = objectMapper;
-        this.restClient = restClientBuilder.build();
+        // 上游必须有界：默认工厂无限超时，上游 hang 会永久占死 ai-chat 工作线程
+        // （SseEmitter 60s 超时救不了阻塞在 IO 上的线程），AI 功能整体瘫痪
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
+                new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(3_000);
+        factory.setReadTimeout(30_000);
+        this.restClient = restClientBuilder.requestFactory(factory).build();
     }
 
     @Override
