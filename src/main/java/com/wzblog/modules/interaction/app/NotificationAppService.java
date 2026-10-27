@@ -61,6 +61,9 @@ public class NotificationAppService {
     @Transactional
     public void create(Long recipientId, Long actorId, String type, String title, String content,
                        String linkType, String linkId, String dedupeKey) {
+        if (recipientId == null) {
+            return; // 无接收人（防御：游客内容的通知不应进入）
+        }
         if (Objects.equals(recipientId, actorId)) {
             return; // 自己触发自己的动作不发通知
         }
@@ -91,6 +94,8 @@ public class NotificationAppService {
         if (inserted > 0) {
             incrementUnread(recipientId, 1);
             pushToUser(recipientId, notification);
+        } else if (dedupeKey != null) {
+            redis.delete("notify:dedupe:" + recipientId + ":" + dedupeKey); // 插入失败回滚快路径，允许重试
         }
     }
 

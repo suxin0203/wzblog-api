@@ -6,7 +6,10 @@ import com.wzblog.common.web.CurrentUser;
 import com.wzblog.common.web.InfrastructureRoute;
 import com.wzblog.common.web.LegacyResponses;
 import com.wzblog.modules.identity.app.LegacyArithmeticCaptcha;
+import com.wzblog.common.error.ErrorCode;
 import com.wzblog.modules.identity.app.LegacyAuthAppService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,6 +31,8 @@ import java.util.Map;
 @RestController
 @InfrastructureRoute
 public class LegacyUsersController {
+
+    private static final Logger log = LoggerFactory.getLogger(LegacyUsersController.class);
 
     private final LegacyAuthAppService legacy;
 
@@ -52,6 +57,7 @@ public class LegacyUsersController {
             var result = legacy.register(body.get("username"), decodeBase64(body.get("password")),
                     body.get("email"), body.get("openid"), body.get("captchaId"),
                     body.get("captchaAnswer"), ClientInfo.from(request));
+            bindOpenidQuietly(body.get("openid"), result.user().id());
             return LegacyResponses.okWithTokens("注册成功", result.tokens().accessToken(),
                     result.tokens().refreshToken(), legacy.toMap(result.user()));
         } catch (BusinessException ex) {
@@ -66,6 +72,7 @@ public class LegacyUsersController {
             var result = legacy.login(body.get("username"), decodeBase64(body.get("password")),
                     body.get("openid"), body.get("captchaId"), body.get("captchaAnswer"),
                     ClientInfo.from(request));
+            bindOpenidQuietly(body.get("openid"), result.user().id());
             return LegacyResponses.okWithTokens("登录成功", result.tokens().accessToken(),
                     result.tokens().refreshToken(), legacy.toMap(result.user()));
         } catch (BusinessException ex) {
@@ -94,6 +101,19 @@ public class LegacyUsersController {
                     .body(LegacyResponses.fail(401, "请登录"));
         }
         return ResponseEntity.ok(LegacyResponses.ok("ok", legacy.me(user)));
+    }
+
+    /** 事务提交后的顺带绑定：失败仅告警不影响登录/注册（旧系统宽松语义）。 */
+    private void bindOpenidQuietly(String openid, Long userId) {
+        if (openid == null || openid.isBlank()) {
+            return;
+        }
+        try {
+            legacy.bindOpenid(userId, openid.trim());
+        } catch (BusinessException ex) {
+            log.warn("顺带绑定 openid 失败（不影响登录/注册）userId={} code={}", userId,
+                    ex.errorCode().code());
+        }
     }
 
     /** 小程序密码 Base64 编码传输（旧系统约定）。 */

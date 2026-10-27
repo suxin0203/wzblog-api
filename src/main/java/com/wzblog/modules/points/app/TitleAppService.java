@@ -43,7 +43,12 @@ public class TitleAppService {
         }
         Title title = new Title();
         applyFields(title, request);
-        titleMapper.insert(title);
+        try {
+            titleMapper.insert(title);
+        } catch (org.springframework.dao.DuplicateKeyException ex) {
+            // 软删称号名仍占用唯一索引，预检查看不到
+            throw new BusinessException(ErrorCode.TITLE_NAME_CONFLICT);
+        }
         auditRecorder.record(admin, "TITLE_CREATE", "TITLE", String.valueOf(title.getId()),
                 null, "{\"name\":\"" + title.getName() + "\"}");
         return toVo(title);
@@ -57,7 +62,11 @@ public class TitleAppService {
         }
         applyFields(title, request);
         title.setUpdatedAt(Times.nowUtc());
-        titleMapper.updateById(title);
+        try {
+            titleMapper.updateById(title);
+        } catch (org.springframework.dao.DuplicateKeyException ex) {
+            throw new BusinessException(ErrorCode.TITLE_NAME_CONFLICT);
+        }
         auditRecorder.record(admin, "TITLE_UPDATE", "TITLE", String.valueOf(id),
                 null, "{\"name\":\"" + title.getName() + "\"}");
         return toVo(title);

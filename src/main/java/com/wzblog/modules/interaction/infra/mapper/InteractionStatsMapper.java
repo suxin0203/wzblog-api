@@ -26,4 +26,12 @@ public interface InteractionStatsMapper {
     long countReactionsBetween(@Param("type") String type,
                                @Param("from") LocalDateTime from,
                                @Param("to") LocalDateTime to);
+
+    /** 对账活跃窗口：该文章近窗口内是否有互动明细写入（点赞/收藏）。 */
+    @Select("""
+            SELECT COUNT(*) FROM article_reactions
+            WHERE article_id = #{articleId} AND created_at > #{since}
+            """)
+    long countRecentReactionsByArticle(@Param("articleId") Long articleId,
+                                       @Param("since") LocalDateTime since);
 }

@@ -29,32 +29,43 @@ public class DashboardAppService {
     private final AuditQueryMapper auditQueryMapper;
     private final UserQueryService userQueryService;
     private final AiSessionAppService aiSessionAppService;
+    private final com.wzblog.modules.interaction.app.InteractionStatsService interactionStatsService;
+    private final com.wzblog.modules.points.app.PointsQueryService pointsQueryService;
 
     public DashboardAppService(DailyStatsMapper dailyStatsMapper,
                                AuditQueryMapper auditQueryMapper,
                                UserQueryService userQueryService,
-                               AiSessionAppService aiSessionAppService) {
+                               AiSessionAppService aiSessionAppService,
+                               com.wzblog.modules.interaction.app.InteractionStatsService interactionStatsService,
+                               com.wzblog.modules.points.app.PointsQueryService pointsQueryService) {
         this.dailyStatsMapper = dailyStatsMapper;
         this.auditQueryMapper = auditQueryMapper;
         this.userQueryService = userQueryService;
         this.aiSessionAppService = aiSessionAppService;
+        this.interactionStatsService = interactionStatsService;
+        this.pointsQueryService = pointsQueryService;
     }
 
-    /** 概览：实时 + 当日。 */
+    /**
+     * 概览：当日指标实时查询（定时任务只回填昨日——聚合任务 03:10 跑，
+     * 读"今日行"全天恒 0，曾在实测中暴露），历史趋势仍走 daily_stats。
+     */
     @Transactional(readOnly = true)
     public Map<String, Object> overview() {
-        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
-        List<DailyStat> rows = dailyStatsMapper.selectRange(today.minusDays(1), today);
-        DailyStat todayStat = rows.stream()
-                .filter(row -> row.getStatDate().equals(today)).findFirst().orElse(null);
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        java.time.LocalDateTime from = today.atStartOfDay(java.time.ZoneId.of("Asia/Shanghai"))
+                .withZoneSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime();
+        java.time.LocalDateTime to = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("date", today.toString());
         result.put("totalUsers", userQueryService.countUsers());
-        result.put("todayRegistered", todayStat == null ? 0 : todayStat.getUserRegistered());
-        result.put("todayViews", todayStat == null ? 0 : todayStat.getViewCount());
-        result.put("todayComments", todayStat == null ? 0 : todayStat.getCommentCreated());
+        result.put("todayRegistered", userQueryService.countRegisteredBetween(from, to));
+        result.put("todayComments",
+                interactionStatsService.countCommentsCreatedBetween(from, to));
         result.put("todayAiMessages", aiSessionAppService.todayMessageCount());
-        result.put("todayPointsIssued", todayStat == null ? 0 : todayStat.getPointsIssued());
+        long[] points = pointsQueryService.sumIssuedAndConsumedBetween(from, to);
+        result.put("todayPointsIssued", points[0]);
+        result.put("todayPointsConsumed", points[1]);
         return result;
     }
 

@@ -63,7 +63,7 @@ public interface CommentMapper extends BaseMapper<Comment> {
             FROM comments
             WHERE root_id IN
             <foreach collection="rootIds" item="id" open="(" separator="," close=")">#{id}</foreach>
-              AND status = 'APPROVED'
+              AND status = 'APPROVED' AND deleted_at IS NULL
             ORDER BY created_at ASC, id ASC
             LIMIT 2147483647
             </script>

@@ -34,17 +34,22 @@ public class UrlSigner {
         this.secret = secretValue.getBytes(StandardCharsets.UTF_8);
     }
 
-    public String sign(String objectKey, Instant expiresAt) {
-        String payload = objectKey + "|" + expiresAt.getEpochSecond();
+    /** 能力用途前缀：读/写签名不可互换（防读签名重组为直传令牌覆盖已发布对象）。 */
+    public static final String PURPOSE_PUT = "PUT:";
+    public static final String PURPOSE_GET = "GET:";
+
+    public String sign(String purpose, String objectKey, Instant expiresAt) {
+        String payload = purpose + objectKey + "|" + expiresAt.getEpochSecond();
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hmac(payload));
     }
 
-    public boolean verify(String objectKey, long expiresAtEpochSeconds, String signature) {
+    public boolean verify(String purpose, String objectKey, long expiresAtEpochSeconds,
+                          String signature) {
         if (signature == null || Instant.now().getEpochSecond() > expiresAtEpochSeconds) {
             return false;
         }
         String expected = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(hmac(objectKey + "|" + expiresAtEpochSeconds));
+                .encodeToString(hmac(purpose + objectKey + "|" + expiresAtEpochSeconds));
         return constantTimeEquals(expected, signature);
     }
 

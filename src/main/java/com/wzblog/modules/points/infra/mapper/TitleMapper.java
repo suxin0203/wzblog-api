@@ -58,6 +58,11 @@ public interface TitleMapper extends BaseMapper<Title> {
     @Select("SELECT COUNT(*) FROM user_titles WHERE user_id = #{userId} AND title_id = #{titleId}")
     int userOwnsTitle(@Param("userId") Long userId, @Param("titleId") Long titleId);
 
+    /** 撤销指定订单授予的称号（TITLE 订单取消时）。 */
+    @org.apache.ibatis.annotations.Delete(
+            "DELETE FROM user_titles WHERE source_order_id = #{orderId}")
+    int revokeByOrder(@Param("orderId") Long orderId);
+
     /** 账户视图：已授予称号 + active 标记（active_title_id 由 users 表维护）。 */
     @Select("""
             SELECT t.id AS id, t.name AS name, t.css_class AS cssClass, ut.acquired_at AS acquiredAt,

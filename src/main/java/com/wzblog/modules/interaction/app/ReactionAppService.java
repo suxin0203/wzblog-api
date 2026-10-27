@@ -158,9 +158,12 @@ public class ReactionAppService {
             commentMapper.adjustLikeCount(commentId, 1, Times.nowUtc());
             long actorId = user.id();
             Long commentAuthor = comment.getUserId();
-            registerAfterCommit(() -> notificationAppService.create(commentAuthor, actorId,
-                    "COMMENT_LIKE", "有人赞了你的评论", "", "COMMENT", String.valueOf(commentId),
-                    "comment_like:" + commentId + ":" + actorId));
+            if (commentAuthor != null) {
+                // 游客评论（userId=null）无通知接收人，跳过
+                registerAfterCommit(() -> notificationAppService.create(commentAuthor, actorId,
+                        "COMMENT_LIKE", "有人赞了你的评论", "", "COMMENT",
+                        String.valueOf(commentId), "comment_like:" + commentId + ":" + actorId));
+            }
         }
         return new CommentLikeVO(String.valueOf(commentId), true, currentLikeCount(comment));
     }

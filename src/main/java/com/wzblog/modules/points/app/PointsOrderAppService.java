@@ -287,6 +287,10 @@ public class PointsOrderAppService {
     private void refundAndRestore(PointsOrder order, OrderStatus to, String reason,
                                   String adminRemark, Long operatorId) {
         OrderStatus from = OrderStatus.valueOf(order.getStatus());
+        // TITLE 订单已授予称号后取消：同步撤销称号，避免退款后白拿称号
+        if (from == OrderStatus.APPROVED && "TITLE".equals(order.getGoodsTypeSnapshot())) {
+            titleMapper.revokeByOrder(order.getId());
+        }
         goodsMapper.restoreStock(order.getGoodsId(), order.getQuantity(), Times.nowUtc());
         pointsAppService.post(order.getUserId(), PointsType.REFUND, order.getTotalPoints(),
                 "ORDER", order.getOrderNo(), "order-refund:" + order.getOrderNo(),
@@ -308,8 +312,8 @@ public class PointsOrderAppService {
             int granted = titleMapper.grantToUser(order.getUserId(), goods.getTitleId(),
                     order.getId());
             if (granted == 0) {
-                log.warn("称号授予未生效 orderId={} titleId={} userId={}", order.getId(),
-                        goods.getTitleId(), order.getUserId());
+                // 已持有（如两笔同称号 PENDING 订单先后审批）：拒绝审批，让运营改走驳回退款
+                throw new BusinessException(ErrorCode.ORDER_TITLE_ALREADY_OWNED);
             }
         }
     }

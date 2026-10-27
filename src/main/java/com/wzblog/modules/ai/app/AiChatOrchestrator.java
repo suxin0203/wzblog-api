@@ -161,6 +161,8 @@ public class AiChatOrchestrator {
                     break;
                 }
                 toolsUsed = true;
+                // OpenAI 协议要求：先回放 assistant 的 tool_calls 决策，再给 tool 结果（带 tool_call_id）
+                context.add(ChatClient.ChatMessage.assistantToolCalls(completion.toolCalls()));
                 for (ChatClient.ToolCall call : completion.toolCalls()) {
                     send(emitter, "tool", Map.of("name", call.name(),
                             "brief", "正在检索站内数据", "status", "start"));
@@ -168,7 +170,7 @@ public class AiChatOrchestrator {
                     int resultCount = countResults(result);
                     send(emitter, "tool", Map.of("name", call.name(),
                             "brief", "检索完成", "status", "end", "resultCount", resultCount));
-                    context.add(ChatClient.ChatMessage.tool(result));
+                    context.add(ChatClient.ChatMessage.tool(result, call.id()));
                     insertToolMessage(session.getId(), call, result);
                 }
             }
@@ -298,11 +300,11 @@ public class AiChatOrchestrator {
         for (int i = recent.size() - 1; i >= 0; i--) {
             AiMessage history = recent.get(i);
             if (AiMessage.ROLE_TOOL.equals(history.getRole())) {
-                context.add(ChatClient.ChatMessage.tool(history.getToolResultJson()));
+                context.add(ChatClient.ChatMessage.tool(history.getToolResultJson(), history.getToolCallId()));
             } else {
                 context.add(new ChatClient.ChatMessage(
                         AiMessage.ROLE_ASSISTANT.equals(history.getRole()) ? "assistant" : "user",
-                        history.getContent()));
+                        history.getContent(), null, null));
             }
         }
         return context;

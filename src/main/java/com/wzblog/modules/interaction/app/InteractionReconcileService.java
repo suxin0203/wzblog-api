@@ -31,17 +31,20 @@ public class InteractionReconcileService {
     private static final String LOCK_KEY = "wzblog:interaction:reconcile-lock";
 
     private final ArticleReactionMapper reactionMapper;
+    private final com.wzblog.modules.interaction.infra.mapper.InteractionStatsMapper statsMapper;
     private final CommentMapper commentMapper;
     private final ArticleCounterService articleCounterService;
     private final AuditRecorder auditRecorder;
     private final StringRedisTemplate redis;
 
     public InteractionReconcileService(ArticleReactionMapper reactionMapper,
+                                       com.wzblog.modules.interaction.infra.mapper.InteractionStatsMapper statsMapper,
                                        CommentMapper commentMapper,
                                        ArticleCounterService articleCounterService,
                                        AuditRecorder auditRecorder,
                                        StringRedisTemplate redis) {
         this.reactionMapper = reactionMapper;
+        this.statsMapper = statsMapper;
         this.commentMapper = commentMapper;
         this.articleCounterService = articleCounterService;
         this.auditRecorder = auditRecorder;
@@ -80,8 +83,9 @@ public class InteractionReconcileService {
 
             int fixed = 0;
             for (Long articleId : candidates) {
-                if (commentMapper.countRecentByArticle(articleId, since) > 0) {
-                    continue; // 活跃文章跳过，避免与写入竞争
+                if (commentMapper.countRecentByArticle(articleId, since) > 0
+                        || statsMapper.countRecentReactionsByArticle(articleId, since) > 0) {
+                    continue; // 活跃文章跳过（评论与点赞/收藏窗口），避免与写入竞争
                 }
                 var counters = expected.getOrDefault(articleId, Map.of());
                 for (CounterType type : CounterType.values()) {

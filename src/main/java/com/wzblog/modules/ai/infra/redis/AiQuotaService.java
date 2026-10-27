@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.List;
 
 /**
  * AI 配额（M6 §11）：IP 分钟窗 + 登录用户/游客 IP 24h 滚动日窗，
@@ -45,30 +46,64 @@ public class AiQuotaService {
         }
     }
 
-    /** 并发 SSE 计数：进入 +1，完成/异常 -1（90s 兜底 TTL）。 */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> ACQUIRE_SCRIPT =
+            buildAcquireScript();
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> RELEASE_SCRIPT =
+            buildReleaseScript();
+
+    /**
+     * 并发 SSE 计数（Lua 原子）：INCR + 每次续期 + 超限回退一次完成。
+     * 每次成功获取都续期 TTL，修复"仅值为 1 时设置 TTL 导致漂移为负"的问题。
+     */
     public boolean tryAcquireConcurrency(String ip) {
-        String globalKey = "ai:conc:global";
-        String ipKey = "ai:conc:ip:" + ip;
-        Long global = redis.opsForValue().increment(globalKey);
-        Long perIp = redis.opsForValue().increment(ipKey);
-        redis.expire(ipKey, Duration.ofSeconds(90));
-        if (global != null && global == 1L) {
-            redis.expire(globalKey, Duration.ofSeconds(90));
-        }
-        if (global != null && global > properties.getMaxConcurrent()) {
-            releaseConcurrency(ip);
+        Long globalOk = redis.execute(ACQUIRE_SCRIPT, List.of("ai:conc:global"),
+                String.valueOf(properties.getMaxConcurrent()), "90000");
+        if (globalOk == null || globalOk == 0L) {
             return false;
         }
-        if (perIp != null && perIp > properties.getIpConcurrent()) {
-            releaseConcurrency(ip);
+        Long ipOk = redis.execute(ACQUIRE_SCRIPT, List.of("ai:conc:ip:" + ip),
+                String.valueOf(properties.getIpConcurrent()), "90000");
+        if (ipOk == null || ipOk == 0L) {
+            release("ai:conc:global"); // IP 维度失败，回退全局名额
             return false;
         }
         return true;
     }
 
     public void releaseConcurrency(String ip) {
-        redis.opsForValue().decrement("ai:conc:global");
-        redis.opsForValue().decrement("ai:conc:ip:" + ip);
+        release("ai:conc:global");
+        release("ai:conc:ip:" + ip);
+    }
+
+    private void release(String key) {
+        redis.execute(RELEASE_SCRIPT, List.of(key));
+    }
+
+    private static org.springframework.data.redis.core.script.DefaultRedisScript<Long> buildAcquireScript() {
+        org.springframework.data.redis.core.script.DefaultRedisScript<Long> script =
+                new org.springframework.data.redis.core.script.DefaultRedisScript<>("""
+                local c = redis.call('INCR', KEYS[1])
+                redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[2]))
+                if c > tonumber(ARGV[1]) then
+                    redis.call('DECR', KEYS[1])
+                    return 0
+                end
+                return 1
+                """, Long.class);
+        return script;
+    }
+
+    private static org.springframework.data.redis.core.script.DefaultRedisScript<Long> buildReleaseScript() {
+        org.springframework.data.redis.core.script.DefaultRedisScript<Long> script =
+                new org.springframework.data.redis.core.script.DefaultRedisScript<>("""
+                local c = redis.call('DECR', KEYS[1])
+                if c < 0 then
+                    redis.call('SET', KEYS[1], 0)
+                    redis.call('PEXPIRE', KEYS[1], 90000)
+                end
+                return c
+                """, Long.class);
+        return script;
     }
 
     public record QuotaWindow(int limit, long used) {
