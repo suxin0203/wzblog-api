@@ -1,93 +1,128 @@
-# 文栈博客 · Java 后端（WzBlog Backend）
+# WzBlog Backend · 文栈博客后端
 
 <!-- 推送到 GitHub 后把 <OWNER> 替换为实际仓库所有者，徽章即生效 -->
 [![CI](https://github.com/<OWNER>/wzblog-server/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/wzblog-server/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/<OWNER>/wzblog-server/branch/master/graph/badge.svg)](https://codecov.io/gh/<OWNER>/wzblog-server)
+[![Java](https://img.shields.io/badge/Java-21-orange)](https://adoptium.net)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen)](https://spring.io/projects/spring-boot)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-> 基于 **Spring Boot 3.5 / JDK 21** 的模块化单体博客后端：Markdown 内容、评论互动、积分商城、媒体管理、AI 站内助手与运营看板，形成完整闭环。作为 Java 后端实习简历项目开发，所有能力均可测试验证。
-
-## 快速开始
-
-```bash
-# 1) 准备 .env（参考 .env.example，填写 DB/Redis/JWT_SECRET 等）
-cp .env.example .env
-
-# 2) 启动依赖（或使用已有 MySQL8/Redis7）
-docker compose up -d mysql redis
-
-# 3) 启动应用（Flyway 自动建 32 张表并写入种子数据）
-./scripts/run.sh
-
-# 4) 验证
-curl http://localhost:8021/api/v1/ping
-open http://localhost:8021/swagger-ui.html
-```
-
-测试（Testcontainers 真实 MySQL/Redis 容器 + ArchUnit + JaCoCo 覆盖率门禁 70%）：
+一个**功能完整、经过并发与安全验证**的模块化单体博客后端：Markdown 内容、双 Token 认证、评论互动、不可变积分账本、媒体管理、AI 站内助手（SSE 流式 + 工具调用）、微信小程序扫码登录（含已上线小程序零改动兼容层）、运营看板——所有能力均有集成测试背书，跑在真实 MySQL/Redis 容器上。
 
 ```bash
-./scripts/mvn.sh verify
+docker compose up -d mysql redis && ./scripts/run.sh   # → http://localhost:8021/swagger-ui.html
 ```
 
-演示数据（可选，空库导入一次）：`mysql -u$DB_USER -p $DB_NAME < db/demo-data.sql`
+---
 
-## 模块与状态
+## ✨ 它能做什么
 
-| 模块 | 状态 | 能力 |
-|---|---|---|
-| M0 平台 | ✅ | 32 表 Flyway、统一响应/错误码/traceId、Security 骨架、OpenAPI、Actuator+Prometheus、CI 三 job、Docker Compose |
-| M1 认证 | ✅ | 21 路由：双 Token 轮换/家族吊销、验证码、登录锁定、找回密码、会话管理、登录审计 |
-| M5 媒体 | ✅ | 7 路由：预签名直传（本地模式 HMAC 能力 URL）、魔数/像素校验、EXIF 方向、异步缩略图、sha256 去重、引用计数、清理任务 |
-| M2 内容 | ✅ | 33 路由：Markdown 渲染/白名单清洗/TOC/阅读时长、草稿-发布-回收站、修订回滚、ngram 全文检索、游标分页 |
-| M3 互动 | ✅ | 24 路由：两级评论树、Aho-Corasick 敏感词、审核状态机、幂等点赞收藏、留言板、通知（去重/未读数/SSE）、计数对账 |
-| M4 积分 | ✅ | 22 路由：不可变账本（行锁+幂等+日上限+反转收敛）、六类事件发放、下单六步（并发防超卖）、订单状态机、称号、调分审计、对账修复 |
-| M6 AI | ✅ | 11 路由：SSE 流式对话（session→tool→delta→done）、6 只读工具、三层配额、游客令牌、摘要/标签建议、后台统计 |
-| M7 运营 | ✅ | 20 路由：配置白名单与 CRUD、轮播/友链、看板 6 接口、审计查询、日统计预聚合 |
-| M8 微信 | ⛔ 已砍除 | P2 可选项；需真实微信凭据无法本地验收，按砍单规则登记（docs/06 §7） |
+| 模块 | 能力 |
+|---|---|
+| **认证 (identity)** | 双 Token 轮换 + 家族复用检测、失败锁定、登录审计、找回密码、微信 openid 身份（自动建号/绑定/迁移） |
+| **内容 (content)** | Markdown 单一事实源（渲染/白名单清洗/TOC/阅读时长为派生列）、草稿-发布-回收站状态机、修订回滚、ngram 全文检索、游标分页、版本键缓存 |
+| **互动 (interaction)** | 两级评论树（父删子留）、Aho-Corasick 敏感词（NFKC 归一 + 原文打星）、审核状态机、幂等点赞收藏、留言板、通知（dedupe 去重 + SSE 实时推送 + 断线续传）、计数对账 |
+| **积分 (points)** | **不可变账本**（行锁串行 + 幂等键 + 锁内日上限 + 反转不透余额）、六类事件发放、下单六步事务（条件扣库存防超卖）、订单状态机 + 退款回补、称号、管理员调分审计、对账修复 |
+| **媒体 (media)** | 预签名直传（本地 HMAC 能力 URL / 预留 MinIO 双 adapter）、魔数 + 解压炸弹防护、EXIF 方向修正、异步缩略图、sha256 去重（同上传者域）、引用计数、孤儿清理任务 |
+| **AI (ai)** | SSE 流式对话（session→tool→delta→done 协议）、6 个只读工具白名单、三层配额（分钟/日/并发 Lua 原子）、游客会话令牌、摘要/标签建议、Mock/OpenAI 双上游 |
+| **微信 (wechat)** | 小程序扫码登录状态机（PENDING→CONFIRMED→COMPLETED）、bindToken 一次性、**已上线小程序零改动兼容层**（旧协议壳 + 新安全内核） |
+| **运营 (admin)** | 配置白名单 CRUD（JSON 列对称编解码）、轮播/友链、看板 6 接口（实时 + 预聚合）、审计日志、日统计任务 |
 
-**测试：99 个集成测试全绿**（Testcontainers 真库），行覆盖率门禁 ≥70%。
+**105 个集成测试** · Testcontainers 真库 · ArchUnit 架构守护 · 覆盖率门禁 ≥70%（实测 79%+）
 
-## 架构
+## 🏗️ 架构
 
 ```
 com.wzblog
-├─ common/     统一响应、错误码、分页、端口（FileReference/TitleLookup 等）
-├─ config/     Security/Web/MyBatis/OpenApi 组合根
-└─ modules/
-   ├─ identity / content / interaction / points / media / ai / admin
-   │   ├─ api/      Controller + DTO/VO（不碰 Mapper/Entity）
-   │   ├─ app/      用例编排（@Transactional 只在这层）
-   │   ├─ domain/   实体/枚举/领域事件
-   │   └─ infra/    Mapper/Redis/存储/外部 API
+├── common/        Result · 错误码 · 滑动窗口限流(Lua) · 跨模块端口 · 旧协议壳工具
+├── config/        Security · Web · 组合根
+└── modules/       8 个业务模块，每个内部四层
+    └── identity / content / interaction / points / media / ai / admin / wechat
+        ├── api/       Controller + DTO/VO（不碰 Mapper/Entity）
+        ├── app/       用例编排（@Transactional 只在这层）
+        ├── domain/    实体 · 枚举 · 领域事件
+        └── infra/     Mapper · Redis · 存储 · 外部 API
 ```
 
-- **跨模块只走 app 端口或领域事件**（如 M2 `ArticleCounterService`、M5 `FileReferencePort`、M1 `UserQueryService`），由 ArchUnit 4 条规则强制。
-- **积分账本**：账户行锁串行化 + 幂等键唯一索引 + 日上限锁内计算；反转不透余额，永不产生负数。
-- **一致性**：文章三计数由 M2 端口同事务维护，每日对账按明细差值收敛并写审计。
-- **明确不做**：微服务/K8s/分库分表/ES/MQ（判据见架构文档 §1.3，面试加分项）。
+三条硬规则（**ArchUnit 测试强制，不是文档约定**）：
 
-## 文档
+1. `api` 不出现 Mapper/Entity —— 只进出 DTO/VO
+2. 跨模块只允许调对方 `app` 层公开服务或订阅领域事件
+3. `common` 不反向依赖业务模块
 
-完整设计文档在 [docs/](docs/)：
+**几个值得一看的设计决策**（完整 ADR 见架构文档 §3）：
 
-| 文档 | 说明 |
+- **模块化单体，不拆微服务**——单库单人规模下拆分是负资产；包边界 + 端口已保留按模块拆分的可能
+- **余额是快照，真相在流水**——积分账本只追加，冲正靠反向流水，SUM(ledger) = balance 恒成立
+- **版本键缓存**——content:article:{id}:v{version}，任何内容变更 bump version 即轮换键，无需删缓存；计数走新鲜行覆盖
+- **明确不做**：ES、MQ、K8s、分库分表（判据写在文档里——知道"何时才需要"比"会用"更重要）
+
+## 🚀 快速开始
+
+```bash
+# 前置：JDK 21、Docker
+git clone <repo> && cd wzblog-server
+cp .env.example .env          # 填 DB_PASSWORD / JWT_SECRET（32+ 随机字节）
+
+docker compose up -d mysql redis   # MySQL 8 + Redis 7
+./scripts/run.sh                   # Flyway 自动建 32 张表 + 种子数据
+
+curl http://localhost:8021/api/v1/ping
+# Swagger UI → http://localhost:8021/swagger-ui.html
+```
+
+**测试**（Testcontainers 起真实容器，非内存库）：
+
+```bash
+./scripts/mvn.sh verify            # 105 集成测试 + ArchUnit + 覆盖率门禁
+# 覆盖率报告 → target/site/jacoco/index.html
+```
+
+## 🔐 安全设计速览
+
+| 威胁 | 对策 |
 |---|---|
-| [总体架构方案](后端架构方案-v2.md) | 架构决策（ADR）、数据库重设计、核心难点 |
-| [文档约定（唯一事实来源）](docs/00-文档索引与约定.md) | 路由、枚举、错误码、模块边界 |
-| [数据库设计](docs/03-数据库设计.md) | 32 张表字典、索引、迁移规范 |
-| [接口契约](docs/04-接口契约.md) | 全局规范、全量路由、错误码 |
-| [开发计划与进度](docs/06-开发计划与进度.md) | WBS、里程碑、进度与砍单登记 |
-| [验收用例](docs/07a-验收用例矩阵-核心.md) | 可执行用例矩阵 |
-| [部署与运维](docs/08-部署与运维.md) | Compose、观测、备份 |
-| [本地环境与运行](docs/11-本地环境与运行.md) | 启动/测试命令、与设计稿的偏差清单 |
-| [**项目学习指南**](docs/12-项目学习指南.md) | 写给 Java 新手：模块地图、难点精讲、主线走读、踩坑与面试弹药 |
-| [模块设计](docs/modules/) | M0~M8 逐模块设计 |
-| [简历与面试](docs/10-简历与面试.md) | 话术与追问准备 |
+| XSS | Markdown 渲染 + **OWASP 白名单**清洗（黑名单防不完） |
+| 上传伪装 | 魔数校验 + 只读尺寸不解码全图（防解压炸弹） |
+| SQL 注入 | 全量 #{} 占位符 + 参数白名单映射 |
+| 暴力破解 | 双通道（新 + 小程序兼容）IP 限流 + 失败锁定 + 恒定耗时比对 |
+| Token 泄露 | Refresh 家族轮换 + 复用检测吊销全家族 |
+| 提示词注入 | AI 工具白名单 + 只读 + 字段裁剪（提示词约束只是补充） |
+| 越权 | 归属校验双保险（路由 + 业务层）+ 越权不泄露存在性（404） |
+| 密钥 | 全部环境变量注入，仓库零明文；日志 URL 脱敏 |
 
-## 主要偏差（相对设计稿）
+## 🧪 测试哲学
 
-见 [docs/11 §5](docs/11-本地环境与运行.md)：文件存储默认本地磁盘（MinIO 预留 adapter）、限流为固定窗口、AI 上游默认 mock（openai 兼容实现就绪）、微信登录砍除。
+- **真容器**：正确性一半靠 InnoDB 行锁与唯一索引，模拟库测不出真问题
+- **断言打到库**：HTTP 200 不够，ref_count、流水条数、审计行都要对
+- **并发真实打**：20 线程抢 1 库存、并发同幂等键、并发刷新轮换
+- **架构也测**：ArchUnit 4 规则曾在开发中真实拦截两次跨模块泄漏
 
-## 环境
+## 📁 目录导览
 
-JDK 21 · Maven 3.9 · MySQL 8 · Redis 7 · Docker。密钥全部经环境变量注入（`.env`），仓库不含真实值。
+```
+├── db/migration/          # Flyway: 32 表 DDL + 种子数据（表全注释 + 索引 + CHECK 约束）
+├── docs/                  # 设计文档包（契约/表结构/模块设计/验收矩阵/学习指南）
+│   └── modules/           #   M0~M8 逐模块设计（状态机/时序/并发策略逐项冻结）
+├── scripts/               # run/mvn 包装（本地 JDK/Maven 无需全局安装）
+├── src/main/java/com/wzblog/
+│   ├── common/            # 限流 Lua、游标分页、端口（FileReference 等）
+│   └── modules/           # 8 模块 × api/app/domain/infra 四层
+└── src/test/java/         # 每模块一个集成测试 + ArchitectureTest
+```
+
+## 🛠️ 技术栈
+
+Java 21 · Spring Boot 3.5 · Spring Security 6 · MyBatis-Plus · MySQL 8 · Redis 7 (Lua) · Flyway · Testcontainers · ArchUnit · JaCoCo · springdoc-openapi · Docker Compose · CI (GitHub Actions)
+
+## 🗺️ 路线图
+
+- [x] M0~M7 全部核心模块 + 全项目审查修复（16 项）
+- [x] M8 微信兼容层（mock 验收，provider=auto 凭据齐备自动切真实上游）
+- [ ] 真机联调：wzblog-api 域名反代 + 小程序实测
+- [ ] 前端（Vue3 网页端 + 小程序 v2 切新契约）
+- [ ] 压测（k6）与性能报告归档
+
+## 📄 License
+
+MIT
