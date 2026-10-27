@@ -96,7 +96,8 @@ public class RealWeChatApiClient implements WeChatApiClient {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("getwxacodeunlimit 调用失败", ex);
+            log.warn("getwxacodeunlimit 调用失败 type={} msg={}", ex.getClass().getSimpleName(),
+                    sanitize(ex.getMessage()));
             throw new BusinessException(ErrorCode.WECHAT_API_ERROR);
         }
     }
@@ -109,7 +110,7 @@ public class RealWeChatApiClient implements WeChatApiClient {
             return cached;
         }
         // 单飞：抢到锁者刷新，未抢到者短暂等待后读缓存
-        Boolean locked = redis.opsForValue().setIfAbsent(TOKEN_LOCK, "1", Duration.ofSeconds(5));
+        Boolean locked = redis.opsForValue().setIfAbsent(TOKEN_LOCK, "1", Duration.ofSeconds(15));
         if (Boolean.TRUE.equals(locked)) {
             try {
                 String again = redis.opsForValue().get(TOKEN_KEY);
@@ -145,12 +146,12 @@ public class RealWeChatApiClient implements WeChatApiClient {
         throw new BusinessException(ErrorCode.WECHAT_API_ERROR);
     }
 
-    private JsonNode getJson(String url) {
-        try {
+    private JsonNode getJson(String url) {        try {
             String body = restClient.get().uri(url).retrieve().body(String.class);
             return objectMapper.readTree(body == null ? "{}" : body);
         } catch (Exception ex) {
-            log.warn("微信上游请求失败 url 前缀={}", url.substring(0, Math.min(60, url.length())), ex);
+            log.warn("微信上游请求失败 type={} msg={}", ex.getClass().getSimpleName(),
+                    sanitize(ex.getMessage()));
             throw new BusinessException(ErrorCode.WECHAT_API_ERROR);
         }
     }
@@ -172,5 +173,13 @@ public class RealWeChatApiClient implements WeChatApiClient {
             return "image/png";
         }
         return "application/json";
+    }
+
+    /** 异常消息脱敏：剥离 URL（可能内嵌 secret/access_token）。 */
+    private static String sanitize(String message) {
+        if (message == null) {
+            return "";
+        }
+        return message.replaceAll("https?://[a-zA-Z0-9.?=/&:_~-]+", "[url]");
     }
 }

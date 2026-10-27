@@ -103,8 +103,9 @@ public class CommentAppService {
         rateLimiter.checkAndConsume("comment", dimension, shortWindow, shortLimit, dailyLimit);
 
         reloadSensitiveWords();
-        String masked = sensitiveWordFilter.mask(normalized);
-        boolean sensitive = !masked.equals(normalized);
+        var maskResult = sensitiveWordFilter.mask(normalized);
+        String masked = maskResult.masked();
+        boolean sensitive = maskResult.hit();
         boolean audit = siteConfigService.getBoolean("comment.audit_enabled", true);
 
         Comment comment = new Comment();

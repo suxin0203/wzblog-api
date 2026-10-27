@@ -42,11 +42,11 @@ public class SiteConfigService {
             return defaultValue;
         }
         String value = config.getConfigValue().trim();
-        // JSON 列存字符串会带引号
+        // JSON 列存字符串会带引号；写侧转义的 \" 与 \ 在读侧对称还原
         if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
             value = value.substring(1, value.length() - 1);
         }
-        return value;
+        return value.replace("\\\\", "\\").replace("\\\"", "\"");
     }
 
     public boolean getBoolean(String key, boolean defaultValue) {

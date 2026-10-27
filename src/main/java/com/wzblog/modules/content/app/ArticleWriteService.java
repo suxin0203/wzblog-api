@@ -121,7 +121,7 @@ public class ArticleWriteService {
         replaceTags(article.getId(), tagIds);
         insertRevision(article, currentUser.id(), null);
 
-        claimImages(coverKey, rendered.imageKeys(), currentUser.id());
+        claimImages(coverKey, rendered.imageKeys(), Set.of(), currentUser.id());
         return new ArticleCreatedVO(article.getId(), article.getSlug(), article.getStatus().name(),
                 article.getVersion(), Times.toInstant(article.getPublishedAt()));
     }
@@ -175,8 +175,11 @@ public class ArticleWriteService {
         Article refreshed = articleMapper.selectAnyById(article.getId());
         insertRevision(refreshed, currentUser.id(), request.changeNote());
 
-        claimImages(coverKey, rendered.imageKeys(), article.getAuthorId());
-        releaseImages(oldImages, newImages);
+        // 引用计数按差集同步：只 claim 新增、只 release 移除（交集不动，防净增）
+        Set<String> oldAll = new LinkedHashSet<>(oldImages);
+        Set<String> newAll = new LinkedHashSet<>(newImages);
+        claimImages(coverKey, rendered.imageKeys(), oldAll, article.getAuthorId());
+        releaseImages(oldAll, newAll);
         return articleAssembler.toEdit(refreshed);
     }
 
@@ -247,7 +250,8 @@ public class ArticleWriteService {
         if (articleMapper.restore(id) == 0) {
             throw new BusinessException(ErrorCode.ARTICLE_STATE_INVALID);
         }
-        claimImages(article.getCoverKey(), imageKeys(article.getContentMd()), article.getAuthorId());
+        claimImages(article.getCoverKey(), imageKeys(article.getContentMd()), Set.of(),
+                article.getAuthorId());
     }
 
     @Transactional
@@ -284,7 +288,8 @@ public class ArticleWriteService {
         Article refreshed = articleMapper.selectAnyById(id);
         insertRevision(refreshed, currentUser.id(),
                 changeNote == null || changeNote.isBlank() ? "restore from r" + revisionNo : changeNote);
-        claimImages(refreshed.getCoverKey(), imageKeys(revision.getContentMd()), refreshed.getAuthorId());
+        claimImages(refreshed.getCoverKey(), imageKeys(revision.getContentMd()), oldImages,
+                refreshed.getAuthorId());
         releaseImages(oldImages, newImages);
         return articleAssembler.toEdit(refreshed);
     }
@@ -394,12 +399,16 @@ public class ArticleWriteService {
         return markdownPipeline.extractImageKeys(markdown == null ? "" : markdown, false);
     }
 
-    private void claimImages(String coverKey, Set<String> contentImages, Long ownerId) {
-        if (coverKey != null && !coverKey.isBlank()) {
+    /** 只 claim 差集（newAll 之外的新引用）。 */
+    private void claimImages(String coverKey, Set<String> contentImages, Set<String> oldAll,
+                             Long ownerId) {
+        if (coverKey != null && !coverKey.isBlank() && !oldAll.contains(coverKey)) {
             fileReferencePort.claimByKey(coverKey, ownerId, FileBizType.ARTICLE_COVER);
         }
         for (String key : contentImages) {
-            fileReferencePort.claimByKey(key, ownerId, FileBizType.CONTENT_IMAGE);
+            if (!oldAll.contains(key)) {
+                fileReferencePort.claimByKey(key, ownerId, FileBizType.CONTENT_IMAGE);
+            }
         }
     }
 

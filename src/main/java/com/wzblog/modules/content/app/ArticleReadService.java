@@ -127,6 +127,15 @@ public class ArticleReadService {
         int limit = pageSize(size, 10, 20);
         Long category = Ids.parseNullable(categoryId);
         Long tag = Ids.parseNullable(tagId);
+        // BOOLEAN MODE 清洗（防 1064 语法错误 500）；清洗后为空则降级 LIKE 原词
+        String cleaned = sanitizeSearchKeyword(value);
+        if (!cleaned.equals(value)) {
+            if (cleaned.isBlank()) {
+                List<Article> rows = articleMapper.selectSearchLike(value, category, tag, limit);
+                return new SearchResultVO(articleAssembler.toListItems(rows), true);
+            }
+            value = cleaned;
+        }
         if (value.codePointCount(0, value.length()) < 2) {
             List<Article> rows = articleMapper.selectSearchLike(value, category, tag, limit);
             return new SearchResultVO(articleAssembler.toListItems(rows), true);
@@ -142,9 +151,10 @@ public class ArticleReadService {
             articles.put(article.getId(), article);
         }
         Instant now = Instant.now();
+        final String keywordForScoring = value;
         List<Article> ordered = hits.stream()
                 .filter(hit -> articles.containsKey(hit.getId()))
-                .sorted(Comparator.comparingDouble((SearchHit hit) -> weightedScore(hit, value, now)).reversed())
+                .sorted(Comparator.comparingDouble((SearchHit hit) -> weightedScore(hit, keywordForScoring, now)).reversed())
                 .limit(limit)
                 .map(hit -> articles.get(hit.getId()))
                 .toList();
@@ -373,6 +383,20 @@ public class ArticleReadService {
 
     private String cacheKey(Article article) {
         return "content:article:" + article.getId() + ":v" + article.getVersion();
+    }
+
+    /**
+     * BOOLEAN MODE 关键词清洗：剥离布尔操作符与引号，防 MySQL 1064 语法错误（公开搜索接口 500）。
+     */
+    static String sanitizeSearchKeyword(String keyword) {
+        if (keyword == null) {
+            return "";
+        }
+        String cleaned = keyword.replace("-", " ")
+                .replaceAll("[+*<>()~@\"]", " ")
+                .replace("'", " ")
+                .trim();
+        return cleaned.isBlank() ? "" : cleaned;
     }
 
     private TimeRange timeRange(Integer year, Integer month) {

@@ -12,6 +12,7 @@ import com.wzblog.modules.identity.domain.RefreshToken;
 import com.wzblog.modules.identity.domain.User;
 import com.wzblog.modules.identity.domain.UserStatus;
 import com.wzblog.modules.identity.infra.mapper.RefreshTokenMapper;
+import com.wzblog.modules.identity.infra.redis.LoginAttemptStore;
 import com.wzblog.modules.identity.infra.mapper.UserMapper;
 import com.wzblog.modules.identity.infra.security.IdentityCrypto;
 import com.wzblog.modules.identity.infra.security.JwtService;
@@ -39,6 +40,9 @@ public class LegacyAuthAppService {
 
     private static final Logger log = LoggerFactory.getLogger(LegacyAuthAppService.class);
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{4,20}$");
+    private static final String DUMMY_HASH =
+            "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     /** Node 版未设头像时的默认微信头像（小程序端展示兼容）。 */
@@ -52,6 +56,7 @@ public class LegacyAuthAppService {
     private final AuthAppService authAppService;
     private final WechatIdentityService wechatIdentityService;
     private final LegacyArithmeticCaptcha captcha;
+    private final LoginAttemptStore attemptStore;
     private final String avatarBaseUrl;
 
     public LegacyAuthAppService(UserMapper userMapper, RefreshTokenMapper refreshTokenMapper,
@@ -59,6 +64,7 @@ public class LegacyAuthAppService {
                                 AuthAppService authAppService,
                                 WechatIdentityService wechatIdentityService,
                                 LegacyArithmeticCaptcha captcha,
+                                LoginAttemptStore attemptStore,
                                 @Value("${wzblog.file.public-base-url:http://localhost:8021/media}")
                                 String avatarBaseUrl) {
         this.userMapper = userMapper;
@@ -68,6 +74,7 @@ public class LegacyAuthAppService {
         this.authAppService = authAppService;
         this.wechatIdentityService = wechatIdentityService;
         this.captcha = captcha;
+        this.attemptStore = attemptStore;
         this.avatarBaseUrl = avatarBaseUrl;
     }
 
@@ -93,6 +100,9 @@ public class LegacyAuthAppService {
     @Transactional
     public LoginResult register(String username, String rawPassword, String email, String openid,
                                 String captchaId, String captchaAnswerMd5, ClientInfo client) {
+        if (!attemptStore.tryAcquireRegisterIp(client.ip())) {
+            throw new BusinessException(ErrorCode.COMMON_RATE_LIMITED, "注册过于频繁，请稍后再试", 3600L);
+        }
         captcha.verify(captchaId, captchaAnswerMd5);
         return registerAfterCaptcha(username, rawPassword, email, openid, client);
     }
@@ -137,14 +147,8 @@ public class LegacyAuthAppService {
         created.setStatus(UserStatus.ACTIVE);
         created.setSource(com.wzblog.modules.identity.domain.UserSource.WEB);
         userMapper.insert(created);
-        if (openid != null && !openid.isBlank()) {
-            try {
-                wechatIdentityService.bindWechat(created.getId(), openid.trim(), null);
-            } catch (BusinessException ex) {
-                log.warn("注册时绑定 openid 失败（不影响注册）userId={}：{}", created.getId(),
-                        ex.errorCode().code());
-            }
-        }
+        // openid 绑定由 Controller 在事务提交后编排（bindWechat 为独立事务）：
+        // 事务内调用+catch 会把共享事务标记 rollback-only 导致 UnexpectedRollbackException
         TokenPairVO tokens = authAppService.issueTokens(created.getId(), client);
         return new LoginResult(toLegacyUser(userMapper.selectById(created.getId())), tokens);
     }
@@ -153,24 +157,36 @@ public class LegacyAuthAppService {
     @Transactional
     public LoginResult login(String username, String rawPassword, String openid,
                              String captchaId, String captchaAnswerMd5, ClientInfo client) {
+        if (!attemptStore.tryAcquireLoginIp(client.ip(), attemptStore.loginIpLimitPerMinute())) {
+            throw new BusinessException(ErrorCode.COMMON_RATE_LIMITED, "登录过于频繁，请稍后再试", 60L);
+        }
         captcha.verify(captchaId, captchaAnswerMd5);
         String name = username == null ? "" : username.trim();
+        String usernameHash = IdentityCrypto.sha256Hex(name.toLowerCase(Locale.ROOT));
+        Long lockRemaining = attemptStore.lockRemainingSeconds(usernameHash);
+        if (lockRemaining != null) {
+            throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED,
+                    ErrorCode.AUTH_ACCOUNT_LOCKED.defaultMessage(), lockRemaining);
+        }
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, name));
-        if (user == null || !passwordEncoder.matches(rawPassword == null ? "" : rawPassword.trim(),
+        if (user == null) {
+            passwordEncoder.matches(rawPassword == null ? "" : rawPassword, DUMMY_HASH);
+            throw new BusinessException(ErrorCode.AUTH_BAD_CREDENTIALS);
+        }
+        if (!passwordEncoder.matches(rawPassword == null ? "" : rawPassword.trim(),
                 user.getPasswordHash())) {
+            long failures = attemptStore.incrementFailure(usernameHash);
+            if (failures >= 5) {
+                attemptStore.lock(usernameHash);
+                throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED,
+                        ErrorCode.AUTH_ACCOUNT_LOCKED.defaultMessage(), 900L);
+            }
             throw new BusinessException(ErrorCode.AUTH_BAD_CREDENTIALS);
         }
         if (user.getStatus() == UserStatus.DISABLED) {
             throw new BusinessException(ErrorCode.AUTH_ACCOUNT_DISABLED);
         }
-        if (openid != null && !openid.isBlank()) {
-            try {
-                wechatIdentityService.bindWechat(user.getId(), openid.trim(), null);
-            } catch (BusinessException ex) {
-                log.warn("登录时绑定 openid 失败（不影响登录）userId={}：{}", user.getId(),
-                        ex.errorCode().code());
-            }
-        }
+        attemptStore.clearFailures(usernameHash);
         TokenPairVO tokens = authAppService.issueTokens(user.getId(), client);
         return new LoginResult(toLegacyUser(userMapper.selectById(user.getId())), tokens);
     }

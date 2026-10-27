@@ -185,12 +185,10 @@ public class QrSessionService {
         QrSession session = requireSession(sceneId);
         String hash = sha256Hex(bindToken);
         String fastKey = "wzblog:wechat:qr:bind:" + hash;
-        String boundScene = redis.opsForValue().get(fastKey);
-        boolean fastOk = boundScene != null && boundScene.equals(sceneId);
         boolean dbOk = session.getBindTokenHash() != null && session.getBindTokenHash().equals(hash)
                 && session.getBindExpiresAt() != null
                 && session.getBindExpiresAt().isAfter(Times.nowUtc());
-        if (!fastOk || !dbOk) {
+        if (!dbOk) {
             throw new BusinessException(ErrorCode.WECHAT_BIND_TOKEN_INVALID);
         }
         int cleared = sessionMapper.update(null,
@@ -207,10 +205,11 @@ public class QrSessionService {
         return session;
     }
 
-    /** 供 bindToken 流程复用：登记 bindToken 到会话（Redis 快路径）。 */
-    public void registerBindFastPath(String bindToken, String sceneId, Duration ttl) {
+    /** entry 未绑定分支：登记 bindToken 快路径（TTL 与 DB 一致，取自配置）。 */
+    public void registerBindFastPath(String bindToken, String sceneId) {
         String hash = sha256Hex(bindToken);
-        redis.opsForValue().set("wzblog:wechat:qr:bind:" + hash, sceneId, ttl);
+        redis.opsForValue().set("wzblog:wechat:qr:bind:" + hash, sceneId,
+                Duration.ofMinutes(properties.getBindTtlMinutes()));
     }
 
     /** 确认会话（注册/绑定成功后调用）。 */

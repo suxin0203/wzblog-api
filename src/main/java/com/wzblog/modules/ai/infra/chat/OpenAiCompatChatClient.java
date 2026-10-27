@@ -56,7 +56,24 @@ public class OpenAiCompatChatClient implements ChatClient {
         for (ChatMessage message : messages) {
             ObjectNode item = messageArray.addObject();
             item.put("role", message.role());
-            item.put("content", message.content());
+            if (message.content() != null) {
+                item.put("content", message.content());
+            }
+            // OpenAI 协议：tool 结果必须带 tool_call_id；assistant 决策需回放 tool_calls
+            if (message.toolCallId() != null) {
+                item.put("tool_call_id", message.toolCallId());
+            }
+            if (message.toolCalls() != null && !message.toolCalls().isEmpty()) {
+                ArrayNode calls = item.putArray("tool_calls");
+                for (ChatClient.ToolCall call : message.toolCalls()) {
+                    ObjectNode callNode = calls.addObject();
+                    callNode.put("id", call.id());
+                    callNode.put("type", "function");
+                    ObjectNode fn = callNode.putObject("function");
+                    fn.put("name", call.name());
+                    fn.put("arguments", call.argumentsJson());
+                }
+            }
         }
         if (tools != null && !tools.isEmpty()) {
             ArrayNode toolArray = request.putArray("tools");

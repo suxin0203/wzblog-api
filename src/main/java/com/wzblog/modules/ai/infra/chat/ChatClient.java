@@ -19,22 +19,30 @@ public interface ChatClient {
     /** 上游模型名（落库 ai_messages.model）。 */
     String modelName();
 
-    record ChatMessage(String role, String content) {
+    /**
+     * role=tool 时 toolCallId 必填（OpenAI 协议要求）；
+     * assistant 可携带 toolCalls（工具轮的模型决策回放）。
+     */
+    record ChatMessage(String role, String content, String toolCallId, List<ToolCall> toolCalls) {
 
         public static ChatMessage system(String content) {
-            return new ChatMessage("system", content);
+            return new ChatMessage("system", content, null, null);
         }
 
         public static ChatMessage user(String content) {
-            return new ChatMessage("user", content);
+            return new ChatMessage("user", content, null, null);
         }
 
         public static ChatMessage assistant(String content) {
-            return new ChatMessage("assistant", content);
+            return new ChatMessage("assistant", content, null, null);
         }
 
-        public static ChatMessage tool(String content) {
-            return new ChatMessage("tool", content);
+        public static ChatMessage assistantToolCalls(List<ToolCall> toolCalls) {
+            return new ChatMessage("assistant", null, null, toolCalls);
+        }
+
+        public static ChatMessage tool(String content, String toolCallId) {
+            return new ChatMessage("tool", content, toolCallId, null);
         }
     }
 

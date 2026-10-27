@@ -75,7 +75,18 @@ public class OperationsAppService {
         existing.setStatus(request.getStatus());
         existing.setStartAt(request.getStartAt());
         existing.setEndAt(request.getEndAt());
-        bannerMapper.updateById(existing);
+        // LambdaUpdateWrapper 显式 set：updateById 默认跳过 null 列，会导致"清空图"落不了库
+        bannerMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Banner>()
+                        .eq(Banner::getId, existing.getId())
+                        .set(Banner::getTitle, existing.getTitle())
+                        .set(Banner::getImageKey, existing.getImageKey())
+                        .set(Banner::getLinkUrl, existing.getLinkUrl())
+                        .set(Banner::getSortOrder, existing.getSortOrder())
+                        .set(Banner::getStatus, existing.getStatus())
+                        .set(Banner::getStartAt, existing.getStartAt())
+                        .set(Banner::getEndAt, existing.getEndAt())
+                        .set(Banner::getUpdatedAt, Times.nowUtc()));
         if (oldImage != null && !oldImage.equals(request.getImageKey())) {
             fileReferencePort.releaseByKey(oldImage);
         }
@@ -145,7 +156,18 @@ public class OperationsAppService {
         existing.setLogoKey(request.getLogoKey());
         existing.setSortOrder(request.getSortOrder());
         existing.setStatus(request.getStatus());
-        friendLinkMapper.updateById(existing);
+        friendLinkMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<FriendLink>()
+                        .eq(FriendLink::getId, existing.getId())
+                        .set(FriendLink::getBlogName, existing.getBlogName())
+                        .set(FriendLink::getBlogUrl, existing.getBlogUrl())
+                        .set(FriendLink::getTheme, existing.getTheme())
+                        .set(FriendLink::getBloggerName, existing.getBloggerName())
+                        .set(FriendLink::getContact, existing.getContact())
+                        .set(FriendLink::getLogoKey, existing.getLogoKey())
+                        .set(FriendLink::getSortOrder, existing.getSortOrder())
+                        .set(FriendLink::getStatus, existing.getStatus())
+                        .set(FriendLink::getUpdatedAt, Times.nowUtc()));
         auditRecorder.record(admin, "CONFIG_UPDATE", "SYSTEM", "friend-link:" + id,
                 "{\"blogName\":\"" + safe(existing.getBlogName()) + "\"}",
                 "{\"blogName\":\"" + safe(request.getBlogName()) + "\"}");

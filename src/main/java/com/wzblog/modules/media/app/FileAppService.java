@@ -111,7 +111,7 @@ public class FileAppService implements FileReferencePort {
 
     /** 本地模式的直传令牌：{objectKey}|{exp}|{hmac}，URL-safe Base64。 */
     private String encodeUploadToken(String objectKey, Instant expiresAt) {
-        String signature = urlSigner.sign(objectKey, expiresAt);
+        String signature = urlSigner.sign(UrlSigner.PURPOSE_PUT, objectKey, expiresAt);
         String payload = objectKey + "|" + expiresAt.getEpochSecond() + "|" + signature;
         return Base64Url.encode(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
@@ -136,11 +136,16 @@ public class FileAppService implements FileReferencePort {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "直传地址非法", null);
         }
         if (!KEY_PATTERN.matcher(objectKey).matches()
-                || !urlSigner.verify(objectKey, expiresAt, parts[2])) {
+                || !urlSigner.verify(UrlSigner.PURPOSE_PUT, objectKey, expiresAt, parts[2])) {
             throw new BusinessException(ErrorCode.FILE_PRESIGN_FORBIDDEN, "直传地址无效或已过期", null);
         }
         if (body.length > properties.getMaxSizeBytes()) {
             throw new BusinessException(ErrorCode.FILE_SIZE_EXCEEDED);
+        }
+        // 直传仅允许写 TEMP 行：confirm 后的对象不可再被旧签名覆盖
+        FileEntry row = fileMapper.selectByObjectKey(objectKey);
+        if (row == null || row.getStatus() != FileStatus.TEMP) {
+            throw new BusinessException(ErrorCode.FILE_PRESIGN_FORBIDDEN, "直传地址无效或已过期", null);
         }
         objectStorage.put(objectKey, body);
         return objectKey;
@@ -188,7 +193,12 @@ public class FileAppService implements FileReferencePort {
         entry.setBizType(bizType.name());
         entry.setStatus(FileStatus.ACTIVE);
         entry.setRefCount(0);
-        fileMapper.insert(entry);
+        try {
+            fileMapper.insert(entry);
+        } catch (Exception ex) {
+            objectStorage.delete(objectKey); // 插库失败补偿：不留无 DB 行的磁盘对象
+            throw ex;
+        }
         eventPublisher.publishEvent(new FileActivatedEvent(entry.getId(), objectKey));
         return toVo(entry);
     }
@@ -273,7 +283,7 @@ public class FileAppService implements FileReferencePort {
         requireOwnerOrAdmin(user, entry);
         int ttl = clamp(expiresSeconds == null ? 300 : expiresSeconds, 60, 3600);
         Instant expiresAt = Instant.now().plusSeconds(ttl);
-        String signature = urlSigner.sign(entry.getObjectKey(), expiresAt);
+        String signature = urlSigner.sign(UrlSigner.PURPOSE_GET, entry.getObjectKey(), expiresAt);
         String url = publicUrlOf(entry.getObjectKey()) + "?exp=" + expiresAt.getEpochSecond()
                 + "&sig=" + signature;
         return new UrlVO(String.valueOf(entry.getId()), url, null, expiresAt);
@@ -367,7 +377,8 @@ public class FileAppService implements FileReferencePort {
             return new MediaContent(bytes, entry.getMimeType(), true);
         }
         if (entry.getStatus() == FileStatus.TEMP
-                && exp != null && sig != null && urlSigner.verify(objectKey, exp, sig)) {
+                && exp != null && sig != null
+                && urlSigner.verify(UrlSigner.PURPOSE_GET, objectKey, exp, sig)) {
             byte[] bytes = objectStorage.get(objectKey);
             if (bytes == null) {
                 throw new BusinessException(ErrorCode.COMMON_NOT_FOUND);

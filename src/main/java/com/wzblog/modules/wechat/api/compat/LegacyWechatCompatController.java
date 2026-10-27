@@ -134,6 +134,9 @@ public class LegacyWechatCompatController {
             if (ex.errorCode() == ErrorCode.WECHAT_QR_NOT_FOUND) {
                 return LegacyResponses.fail(404, "会话不存在或已被清理");
             }
+            if (ex.errorCode() == ErrorCode.AUTH_ACCOUNT_DISABLED) {
+                return LegacyResponses.fail(403, "账号已停用，请联系管理员");
+            }
             return LegacyResponses.fail(500, "查询扫码会话失败");
         }
     }
@@ -162,8 +165,7 @@ public class LegacyWechatCompatController {
                     client.ip(), client.userAgent());
             if (result.bindToken() != null) {
                 // 未绑定分支：bindToken 走 Redis 快路径校验（login_ok 分支无 bindToken）
-                qrSessions.registerBindFastPath(result.bindToken(), trim(body.get("sceneId")),
-                        java.time.Duration.ofMinutes(5));
+                qrSessions.registerBindFastPath(result.bindToken(), trim(body.get("sceneId")));
             }
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("action", result.action());
