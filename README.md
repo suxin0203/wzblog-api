@@ -73,7 +73,7 @@ curl http://localhost:8021/api/v1/ping
 **测试**（Testcontainers 起真实容器，非内存库）：
 
 ```bash
-./scripts/mvn.sh verify            # 110 集成测试 + ArchUnit + 覆盖率门禁
+./scripts/mvn.sh verify            # 121 集成测试 + ArchUnit + 覆盖率门禁
 # 覆盖率报告 → target/site/jacoco/index.html
 ```
 

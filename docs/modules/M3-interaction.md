@@ -4,7 +4,7 @@
 > 依赖模块：M0（`SiteConfigService` 敏感词/审核开关）、M1（`UserQueryService#getBrief/getBriefs` 只读）、M2（`ArticleQueryService#getBrief/getBriefs` 只读；`ArticleCounterService#increment/decrement` 同事务计数）
 > 对应阶段：阶段 3（互动）
 > 状态：已定稿
-> 契约版本：以 [00-文档索引与约定](../00-文档索引与约定.md) 1.3 为准
+> 契约版本：以 [00-文档索引与约定](../00-文档索引与约定.md) 1.6 为准
 
 ## 1. 模块信息
 
