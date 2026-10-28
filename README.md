@@ -1,8 +1,7 @@
 # WzBlog Backend · 文栈博客后端
 
-<!-- 推送到 GitHub 后把 <OWNER> 替换为实际仓库所有者，徽章即生效 -->
-[![CI](https://github.com/<OWNER>/wzblog-server/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/wzblog-server/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/<OWNER>/wzblog-server/branch/master/graph/badge.svg)](https://codecov.io/gh/<OWNER>/wzblog-server)
+[![CI](https://github.com/suxin0203/wzblog-api/actions/workflows/ci.yml/badge.svg)](https://github.com/suxin0203/wzblog-api/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/suxin0203/wzblog-api/branch/master/graph/badge.svg)](https://codecov.io/gh/suxin0203/wzblog-api)
 [![Java](https://img.shields.io/badge/Java-21-orange)](https://adoptium.net)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -61,7 +60,7 @@ com.wzblog
 
 ```bash
 # 前置：JDK 21、Docker
-git clone <repo> && cd wzblog-server
+git clone https://github.com/suxin0203/wzblog-api.git && cd wzblog-api
 cp .env.example .env          # 填 DB_PASSWORD / JWT_SECRET（32+ 随机字节）
 
 docker compose up -d mysql redis   # MySQL 8 + Redis 7
