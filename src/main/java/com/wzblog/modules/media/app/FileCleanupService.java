@@ -59,14 +59,15 @@ public class FileCleanupService {
 
     /** 手动触发（后台路由）；锁被持有返回 409 FILE_CLEANUP_RUNNING。 */
     public CleanupVO run(boolean dryRun) {
-        Boolean acquired = redis.opsForValue().setIfAbsent(LOCK_KEY, "1", Duration.ofMinutes(30));
-        if (!Boolean.TRUE.equals(acquired)) {
+        com.wzblog.common.lock.OwnerAwareRedisLock lock =
+                new com.wzblog.common.lock.OwnerAwareRedisLock(redis, LOCK_KEY);
+        if (!lock.tryAcquire(Duration.ofMinutes(30))) {
             throw new BusinessException(ErrorCode.FILE_CLEANUP_RUNNING);
         }
         try {
             return doRun(dryRun);
         } finally {
-            redis.delete(LOCK_KEY);
+            lock.release(); // 仅持有者可删：超时被他人抢走后不会误删
         }
     }
 

@@ -76,6 +76,8 @@ public class LegacyWechatCompatController {
     @GetMapping("/wechat/userinfo/{openid}")
     public Map<String, Object> userinfo(@PathVariable("openid") String openid,
                                         HttpServletRequest request) {
+        // 旧协议 openid 即登录：限流是协议不可改前提下唯一的缓解
+        qrSessions.requireRate("userinfo", ClientInfo.from(request).ip(), 30, 60);
         var user = legacyAuth.userByOpenid(openid);
         if (user == null) {
             return LegacyResponses.fail(0, "用户不存在");

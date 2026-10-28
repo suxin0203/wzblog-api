@@ -64,8 +64,9 @@ public class DailyStatsAggregateJob {
     }
 
     public void run(LocalDate statDate) {
-        Boolean acquired = redis.opsForValue().setIfAbsent(LOCK_KEY, "1", Duration.ofMinutes(30));
-        if (!Boolean.TRUE.equals(acquired)) {
+        com.wzblog.common.lock.OwnerAwareRedisLock lock =
+                new com.wzblog.common.lock.OwnerAwareRedisLock(redis, LOCK_KEY);
+        if (!lock.tryAcquire(Duration.ofMinutes(30))) {
             return;
         }
         try {
@@ -84,7 +85,7 @@ public class DailyStatsAggregateJob {
             long[] issuedAndConsumed = pointsQueryService.sumIssuedAndConsumedBetween(from, to);
             stat.setPointsIssued((int) issuedAndConsumed[0]);
             stat.setPointsConsumed((int) issuedAndConsumed[1]);
-            stat.setAiMessageCount((int) aiSessionCountBetween(from, to));
+            stat.setAiMessageCount((int) aiSessionAppService.rangeMessageCount(from, to));
 
             // 阅读来自 M2 的 Redis 日计数（仅最近日期可靠，历史日为 0）
             DailyViews views = articleStatsService.drainDailyViews(statDate);
@@ -96,7 +97,7 @@ public class DailyStatsAggregateJob {
             log.info("日统计已回填 {} 注册={} 发布={} 阅读={}", statDate, stat.getUserRegistered(),
                     stat.getArticlePublished(), stat.getViewCount());
         } finally {
-            redis.delete(LOCK_KEY);
+            lock.release();
         }
     }
 

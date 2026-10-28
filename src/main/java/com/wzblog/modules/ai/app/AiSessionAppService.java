@@ -19,6 +19,7 @@ import com.wzblog.modules.ai.infra.mapper.AiFeedbackMapper;
 import com.wzblog.modules.ai.infra.mapper.AiMessageMapper;
 import com.wzblog.modules.ai.infra.mapper.AiSessionMapper;
 import com.wzblog.modules.ai.infra.redis.AiQuotaService;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import com.wzblog.modules.ai.infra.redis.GuestSessionStore;
 import com.wzblog.modules.ai.infra.util.Ulid;
 import org.springframework.stereotype.Service;
@@ -40,17 +41,19 @@ public class AiSessionAppService {
     private final GuestSessionStore guestSessionStore;
     private final AiQuotaService quotaService;
     private final AiProperties properties;
+    private final StringRedisTemplate redis;
 
     public AiSessionAppService(AiSessionMapper sessionMapper, AiMessageMapper messageMapper,
                                AiFeedbackMapper feedbackMapper,
                                GuestSessionStore guestSessionStore, AiQuotaService quotaService,
-                               AiProperties properties) {
+                               AiProperties properties, StringRedisTemplate redis) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
         this.feedbackMapper = feedbackMapper;
         this.guestSessionStore = guestSessionStore;
         this.quotaService = quotaService;
         this.properties = properties;
+        this.redis = redis;
     }
 
     /** 会话消息（游客默认不下发 TOOL 行）。 */
@@ -104,8 +107,21 @@ public class AiSessionAppService {
         // 会话归属校验（游客须持令牌）
         resolveSession(user, guestToken, message.getSessionId());
         Long feedbackUser = user == null ? null : user.id();
-        if (feedbackMapper.countByMessageAndUser(messageId, feedbackUser) > 0) {
-            throw new BusinessException(ErrorCode.AI_FEEDBACK_DUPLICATE);
+        if (feedbackUser != null) {
+            // 登录用户：DB 唯一键维度判重
+            if (feedbackMapper.countByMessageAndUser(messageId, feedbackUser) > 0) {
+                throw new BusinessException(ErrorCode.AI_FEEDBACK_DUPLICATE);
+            }
+        } else {
+            // 游客：DB 行的 user_id 均为 NULL 会塌缩成"所有游客共享一次反馈"，
+            // 改按会话令牌哈希在 Redis 判重（30 天）
+            String guestKey = "ai:feedback:guest:" + messageId + ":"
+                    + Integer.toHexString(String.valueOf(guestToken).hashCode());
+            Boolean first = redis.opsForValue().setIfAbsent(guestKey, "1",
+                    java.time.Duration.ofDays(30));
+            if (Boolean.FALSE.equals(first)) {
+                throw new BusinessException(ErrorCode.AI_FEEDBACK_DUPLICATE);
+            }
         }
         AiFeedback feedback = new AiFeedback();
         feedback.setMessageId(messageId);
@@ -183,6 +199,11 @@ public class AiSessionAppService {
     public long todayMessageCount() {
         LocalDateTime start = java.time.LocalDate.now(ZoneOffset.UTC).atStartOfDay();
         return messageMapper.countInRange(start, LocalDateTime.now(ZoneOffset.UTC));
+    }
+
+    /** M7 日统计用：区间消息数（历史回填不再恒 0）。 */
+    public long rangeMessageCount(LocalDateTime from, LocalDateTime to) {
+        return messageMapper.countInRange(from, to);
     }
 
     // ------------------------------------------------------------ 内部

@@ -170,7 +170,12 @@ public class NotificationAppService {
         try {
             emitter.send(SseEmitter.event().comment("ping"));
             if (lastEventId != null && !lastEventId.isBlank()) {
-                long afterId = Long.parseLong(lastEventId.trim());
+                long afterId;
+                try {
+                    afterId = Long.parseLong(lastEventId.trim());
+                } catch (NumberFormatException ex) {
+                    afterId = 0L; // 非法 Last-Event-ID 视为无续传，不 500
+                }
                 for (Notification notification : notificationMapper.selectAfterId(user.id(),
                         afterId, 50)) {
                     emitter.send(SseEmitter.event()

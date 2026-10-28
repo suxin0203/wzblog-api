@@ -22,10 +22,13 @@ public class SseConnectionRegistry {
 
     public boolean register(Long userId, SseEmitter emitter) {
         List<SseEmitter> list = byUser.computeIfAbsent(userId, key -> new CopyOnWriteArrayList<>());
-        if (list.size() >= MAX_PER_USER) {
-            return false;
+        // 锁内 check-then-add：CopyOnWriteArrayList 的 add 本身原子但 size 检查不是
+        synchronized (list) {
+            if (list.size() >= MAX_PER_USER) {
+                return false;
+            }
+            list.add(emitter);
         }
-        list.add(emitter);
         emitter.onCompletion(() -> list.remove(emitter));
         emitter.onTimeout(() -> {
             list.remove(emitter);
