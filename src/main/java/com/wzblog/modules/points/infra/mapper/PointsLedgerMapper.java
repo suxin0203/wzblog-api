@@ -58,6 +58,22 @@ public interface PointsLedgerMapper extends BaseMapper<LedgerEntry> {
     long sumPositiveByBiz(@Param("userId") Long userId, @Param("type") String type,
                           @Param("bizType") String bizType, @Param("bizId") String bizId);
 
+    /**
+     * 按 biz 查正向流水（不限用户）：接管后 author_id 会变，
+     * 反转必须回到原收款人（D9），所以按流水定位而不是按当前作者。
+     */
+    @Select("""
+            SELECT
+            """ + COLUMNS + """
+            FROM points_ledger
+            WHERE type = #{type} AND amount > 0
+              AND biz_type = #{bizType} AND biz_id = #{bizId}
+            ORDER BY id ASC
+            """)
+    List<LedgerEntry> selectPositiveByBiz(@Param("type") String type,
+                                          @Param("bizType") String bizType,
+                                          @Param("bizId") String bizId);
+
     @Select("""
             <script>
             SELECT

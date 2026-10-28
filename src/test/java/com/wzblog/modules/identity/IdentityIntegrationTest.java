@@ -665,4 +665,29 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         assertThat(oldRefresh.status()).isEqualTo(401);
         assertThat(oldRefresh.code()).isEqualTo("AUTH_REFRESH_INVALID");
     }
+
+    /** G8：注销清空 avatar_key 的同时必须释放旧头像引用，否则文件永远无法被清理。 */
+    @Test
+    void deleteUserReleasesAvatarReference() {
+        String username = unique("delav");
+        String id = register(username, PASSWORD, null);
+        String token = accessToken(username, PASSWORD);
+        String avatarKey = "avatars/2026/10/" + unique("av") + ".png";
+        jdbc.update("""
+                INSERT INTO files (bucket, object_key, uploader_id, biz_type, status, ref_count, size_bytes)
+                VALUES ('local', ?, ?, 'AVATAR', 'ACTIVE', 0, 100)
+                """, avatarKey, Long.valueOf(id));
+        assertThat(put("/api/v1/users/me",
+                Map.of("nickname", "头像用户", "avatarKey", avatarKey), token).status()).isEqualTo(200);
+        assertThat(avatarRefCount(avatarKey)).isEqualTo(1);
+
+        assertThat(delete("/api/v1/admin/users/" + id, adminToken()).status()).isEqualTo(200);
+        assertThat(avatarRefCount(avatarKey)).as("注销必须释放头像引用").isZero();
+    }
+
+    private int avatarRefCount(String objectKey) {
+        Integer count = jdbc.queryForObject("SELECT ref_count FROM files WHERE object_key = ?",
+                Integer.class, objectKey);
+        return count == null ? 0 : count;
+    }
 }

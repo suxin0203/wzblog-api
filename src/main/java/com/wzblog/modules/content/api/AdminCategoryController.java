@@ -22,7 +22,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/admin/categories")
-@PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminCategoryController {
 
     private final TaxonomyService taxonomyService;

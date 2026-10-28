@@ -22,7 +22,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/admin/tags")
-@PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminTagController {
 
     private final TaxonomyService taxonomyService;

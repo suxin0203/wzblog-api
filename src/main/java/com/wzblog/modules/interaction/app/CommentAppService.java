@@ -141,7 +141,7 @@ public class CommentAppService {
         requireCommentableArticle(articleId);
         Long viewerId = user == null ? null : user.id();
         if (rootIdParam != null && !rootIdParam.isBlank()) {
-            return listChildren(articleId, parseId(rootIdParam, "rootId"), cursor, size);
+            return listChildren(articleId, parseId(rootIdParam, "rootId"), cursor, size, viewerId);
         }
 
         int offset = CommentCursor.decode(cursor);
@@ -156,7 +156,7 @@ public class CommentAppService {
         List<Long> rootIds = roots.stream().map(Comment::getId).toList();
         Map<Long, List<Comment>> childrenByRoot = new HashMap<>();
         if (!rootIds.isEmpty()) {
-            for (Comment child : commentMapper.selectChildrenOf(rootIds)) {
+            for (Comment child : commentMapper.selectChildrenOf(rootIds, articleId, viewerId)) {
                 childrenByRoot.computeIfAbsent(child.getRootId(), key -> new ArrayList<>()).add(child);
             }
         }
@@ -185,14 +185,15 @@ public class CommentAppService {
     }
 
     private CursorPage<CommentNodeVO> listChildren(Long articleId, Long rootId, String cursor,
-                                                   int size) {
+                                                   int size, Long viewerId) {
         Comment root = commentMapper.selectByIdIncludeDeleted(rootId);
         if (root == null || !Objects.equals(root.getArticleId(), articleId)) {
             throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
         }
         int offset = CommentCursor.decode(cursor);
         int limit = Math.min(Math.max(size, 1), 50);
-        List<Comment> children = commentMapper.selectChildPage(rootId, limit + 1, offset);
+        List<Comment> children = commentMapper.selectChildPage(rootId, articleId, viewerId,
+                limit + 1, offset);
         boolean hasNext = children.size() > limit;
         if (hasNext) {
             children = children.subList(0, limit);
@@ -219,8 +220,8 @@ public class CommentAppService {
         if (commentMapper.softDelete(commentId, Times.nowUtc()) == 0) {
             return;
         }
+        syncVisibleCommentCount(comment.getArticleId());
         if (comment.getStatus() == CommentStatus.APPROVED && comment.getUserId() != null) {
-            articleCounterService.decrement(comment.getArticleId(), CounterType.COMMENT, 1);
             eventPublisher.publishEvent(new CommentRemovedEvent(commentId,
                     comment.getArticleId(), comment.getUserId()));
         }
@@ -234,6 +235,7 @@ public class CommentAppService {
                     null);
         }
         Comment comment = requireExisting(commentId);
+        requireModerationScope(editor, comment);
         if (comment.getStatus() == target) {
             return target; // 幂等
         }
@@ -245,6 +247,14 @@ public class CommentAppService {
         if (!allowed) {
             throw new BusinessException(ErrorCode.COMMENT_STATUS_INVALID);
         }
+        if (target == CommentStatus.APPROVED && comment.getRootId() != null) {
+            Comment root = commentMapper.selectByIdIncludeDeleted(comment.getRootId());
+            if (root == null || !Objects.equals(root.getArticleId(), comment.getArticleId())
+                    || root.getStatus() != CommentStatus.APPROVED) {
+                throw new BusinessException(ErrorCode.COMMENT_STATUS_INVALID,
+                        "根评论不可见，不能通过该回复", null);
+            }
+        }
         if (commentMapper.transitionStatus(commentId, comment.getStatus(), target,
                 Times.nowUtc()) == 0) {
             throw new BusinessException(ErrorCode.COMMENT_STATUS_INVALID);
@@ -253,46 +263,49 @@ public class CommentAppService {
                 "{\"status\":\"" + comment.getStatus() + "\"}",
                 "{\"status\":\"" + target + "\",\"remark\":" + quote(remark) + "}");
 
+        syncVisibleCommentCount(comment.getArticleId());
         if (target == CommentStatus.APPROVED && comment.getStatus() != CommentStatus.APPROVED) {
-            articleCounterService.increment(comment.getArticleId(), CounterType.COMMENT, 1);
             if (comment.getUserId() != null) {
                 ArticleBrief article = articleQueryService.getBrief(comment.getArticleId());
                 eventPublisher.publishEvent(new CommentApprovedEvent(commentId,
                         comment.getArticleId(), comment.getUserId(),
                         article == null ? "" : article.title()));
             }
-        } else if (comment.getStatus() == CommentStatus.APPROVED && target != CommentStatus.APPROVED) {
-            articleCounterService.decrement(comment.getArticleId(), CounterType.COMMENT, 1);
-            if (comment.getUserId() != null) {
-                eventPublisher.publishEvent(new CommentRemovedEvent(commentId,
-                        comment.getArticleId(), comment.getUserId()));
-            }
         }
+        // D13：HIDDEN 是可逆状态，不反转积分；只有删除才发 CommentRemovedEvent
         return target;
     }
 
     @Transactional
     public void deleteByAdmin(CurrentUser editor, Long commentId) {
         Comment comment = requireExisting(commentId);
+        requireModerationScope(editor, comment);
         if (comment.isDeleted()) {
             return;
         }
         if (commentMapper.softDelete(commentId, Times.nowUtc()) > 0) {
             auditRecorder.record(editor, "COMMENT_STATUS", "COMMENT", String.valueOf(commentId),
                     "{\"status\":\"" + comment.getStatus() + "\"}", "{\"deleted\":true}");
-            if (comment.getStatus() == CommentStatus.APPROVED) {
-                articleCounterService.decrement(comment.getArticleId(), CounterType.COMMENT, 1);
-                if (comment.getUserId() != null) {
-                    eventPublisher.publishEvent(new CommentRemovedEvent(commentId,
-                            comment.getArticleId(), comment.getUserId()));
-                }
+            syncVisibleCommentCount(comment.getArticleId());
+            if (comment.getStatus() == CommentStatus.APPROVED && comment.getUserId() != null) {
+                eventPublisher.publishEvent(new CommentRemovedEvent(commentId,
+                        comment.getArticleId(), comment.getUserId()));
             }
         }
     }
 
-    public com.wzblog.common.api.PageResult<CommentNodeVO> adminList(CommentStatus status,
+    /** A 方案：EDITOR 只能按 articleId 查自己文章的评论；ADMIN 可查全部。 */
+    public com.wzblog.common.api.PageResult<CommentNodeVO> adminList(CurrentUser editor,
+                                                                     CommentStatus status,
                                                                      Long articleId, int page,
                                                                      int pageSize) {
+        if (!editor.isAdmin()) {
+            if (articleId == null) {
+                throw new BusinessException(ErrorCode.AUTH_FORBIDDEN,
+                        "EDITOR 必须按 articleId 查询自己文章的评论", null);
+            }
+            requireArticleAuthor(editor, articleId);
+        }
         long total = commentMapper.countAdminPage(status, articleId);
         int offset = (page - 1) * pageSize;
         List<Comment> comments = commentMapper.selectAdminPage(status, articleId, pageSize, offset);
@@ -329,7 +342,44 @@ public class CommentAppService {
                 || parent.getStatus() != CommentStatus.APPROVED) {
             throw new BusinessException(ErrorCode.COMMENT_PARENT_INVALID);
         }
+        if (parent.getRootId() != null) {
+            Comment root = commentMapper.selectByIdIncludeDeleted(parent.getRootId());
+            if (root == null || !Objects.equals(root.getArticleId(), articleId)
+                    || root.getStatus() != CommentStatus.APPROVED) {
+                throw new BusinessException(ErrorCode.COMMENT_PARENT_INVALID);
+            }
+        }
         return parent;
+    }
+
+    /** 评论增删审后按公开树可见口径回算，避免“计数有、列表无”。 */
+    private void syncVisibleCommentCount(Long articleId) {
+        int target = commentMapper.countVisibleByArticle(articleId);
+        int current = articleCounterService.increment(articleId, CounterType.COMMENT, 0);
+        int delta = target - current;
+        if (delta > 0) {
+            articleCounterService.increment(articleId, CounterType.COMMENT, delta);
+        } else if (delta < 0) {
+            articleCounterService.decrement(articleId, CounterType.COMMENT, -delta);
+        }
+    }
+
+    /** 审核范围（D5）：ADMIN 不限；EDITOR 必须是文章作者，且不能审自己写的评论。 */
+    private void requireModerationScope(CurrentUser editor, Comment comment) {
+        if (editor.isAdmin()) {
+            return;
+        }
+        requireArticleAuthor(editor, comment.getArticleId());
+        if (Objects.equals(comment.getUserId(), editor.id())) {
+            throw new BusinessException(ErrorCode.AUTH_FORBIDDEN, "不能审核自己的评论", null);
+        }
+    }
+
+    private void requireArticleAuthor(CurrentUser editor, Long articleId) {
+        ArticleBrief article = articleQueryService.getBrief(articleId);
+        if (article == null || !Objects.equals(article.authorId(), editor.id())) {
+            throw new BusinessException(ErrorCode.AUTH_FORBIDDEN);
+        }
     }
 
     private Comment requireExisting(Long commentId) {

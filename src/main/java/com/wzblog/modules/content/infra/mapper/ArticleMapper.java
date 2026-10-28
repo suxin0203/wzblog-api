@@ -30,7 +30,7 @@ public interface ArticleMapper extends BaseMapper<Article> {
             """;
 
     String PUBLIC_FILTER = " a.status = 'PUBLISHED' AND a.visibility = 'PUBLIC' "
-            + "AND a.deleted_at IS NULL AND a.published_at IS NOT NULL";
+            + "AND a.deleted_at IS NULL AND a.published_at IS NOT NULL ";
 
     @Select("SELECT * FROM articles WHERE slug = #{slug}")
     Article selectBySlug(@Param("slug") String slug);
@@ -360,6 +360,14 @@ public interface ArticleMapper extends BaseMapper<Article> {
             WHERE id = #{id} AND deleted_at IS NOT NULL
             """)
     int restore(@Param("id") Long id);
+
+    /** 接管：改作者并递增 version（缓存键随版本轮换）。 */
+    @Update("""
+            UPDATE articles SET author_id = #{authorId}, version = version + 1,
+              updated_at = UTC_TIMESTAMP(3)
+            WHERE id = #{id} AND deleted_at IS NULL
+            """)
+    int updateAuthor(@Param("id") Long id, @Param("authorId") Long authorId);
 
     @Update("""
             UPDATE articles SET view_count = view_count + 1, view_internal_count = view_internal_count + 1

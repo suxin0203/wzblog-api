@@ -325,26 +325,49 @@ public class FileAppService implements FileReferencePort {
     // ------------------------------------------------------------ FileReferencePort
 
     @Override
-    public void claimByKey(String objectKey, Long ownerId, FileBizType bizType) {
+    public void claimByKey(String objectKey, Long ownerId, CurrentUser actor, FileBizType bizType) {
         if (objectKey == null || objectKey.isBlank()) {
             return;
         }
         String key = objectKey.trim();
         // 先校验归属与用途，再原子递增；必须运行在调用方事务内，校验失败由其回滚
+        FileEntry entry = requireClaimable(key, bizType);
+        boolean uploadedByOwner = entry.getUploaderId() != null && entry.getUploaderId().equals(ownerId);
+        boolean uploadedByActor = entry.getUploaderId() != null && actor != null
+                && entry.getUploaderId().equals(actor.id());
+        boolean adminOverride = actor != null && actor.isAdmin();
+        if (entry.getUploaderId() != null && !uploadedByOwner && !uploadedByActor && !adminOverride) {
+            throw new BusinessException(ErrorCode.FILE_PRESIGN_FORBIDDEN, "不能引用他人的文件", null);
+        }
+        incrementRefCount(key, objectKey);
+    }
+
+    @Override
+    public void claimRecordedByKey(String objectKey, FileBizType bizType) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return;
+        }
+        String key = objectKey.trim();
+        requireClaimable(key, bizType);
+        incrementRefCount(key, objectKey);
+    }
+
+    private FileEntry requireClaimable(String key, FileBizType bizType) {
         FileEntry entry = fileMapper.selectByObjectKey(key);
         if (entry == null || entry.isDeleted()) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "引用的图片不存在: " + objectKey, null);
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "引用的图片不存在: " + key, null);
         }
         if (entry.getStatus() == FileStatus.TEMP) {
             throw new BusinessException(ErrorCode.FILE_CONFIRM_TIMEOUT,
-                    "图片尚未确认上传: " + objectKey, null);
-        }
-        if (entry.getUploaderId() != null && ownerId != null && !entry.getUploaderId().equals(ownerId)) {
-            throw new BusinessException(ErrorCode.FILE_PRESIGN_FORBIDDEN, "不能引用他人的文件", null);
+                    "图片尚未确认上传: " + key, null);
         }
         if (bizType != null && entry.getBizType() != null && !entry.getBizType().equals(bizType.name())) {
             throw new BusinessException(ErrorCode.FILE_PRESIGN_FORBIDDEN, "文件用途不匹配", null);
         }
+        return entry;
+    }
+
+    private void incrementRefCount(String key, String objectKey) {
         if (fileMapper.claimByKey(key, Times.nowUtc()) == 0) {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "引用的图片不存在: " + objectKey, null);
         }

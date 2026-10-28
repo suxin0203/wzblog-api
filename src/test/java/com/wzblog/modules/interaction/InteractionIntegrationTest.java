@@ -116,15 +116,17 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         HttpResult tree = get("/api/v1/articles/" + article + "/comments", null);
         JsonNode root = tree.data().path("list").get(0);
         assertThat(root.path("children").size()).isEqualTo(1);
-        assertThat(root.path("children").get(0).path("replyToUser").path("nickname").asText())
-                .isEqualTo("超级管理员");
+        Long adminId = jdbc.queryForObject(
+                "SELECT id FROM users WHERE username = 'bootstrap_admin'", Long.class);
+        assertThat(root.path("children").get(0).path("replyToUser").path("userId").asText())
+                .isEqualTo(String.valueOf(adminId));
 
-        // 下架根评论（APPROVED→HIDDEN）→ 计数回退
+        // 下架根评论（APPROVED→HIDDEN）→ 根与子回复都不可见，计数归零
         put("/api/v1/admin/comments/" + commentId + "/status", Map.of("status", "HIDDEN"),
                 adminToken());
         Integer afterHide = jdbc.queryForObject(
                 "SELECT comment_count FROM articles WHERE id = ?", Integer.class, article);
-        assertThat(afterHide).isEqualTo(1); // 回复仍在
+        assertThat(afterHide).isZero();
 
         // 删除已过审回复 → 计数归零
         HttpResult deleted = delete("/api/v1/comments/" + replyId, adminToken());
@@ -149,6 +151,106 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         assertThat(placeholder.path("content").isNull()).isTrue();
         assertThat(placeholder.path("children").size()).isEqualTo(1);
         assertThat(placeholder.path("children").get(0).path("content").asText()).isEqualTo("子评论");
+        Integer count = jdbc.queryForObject(
+                "SELECT comment_count FROM articles WHERE id = ?", Integer.class, article);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void pendingRootDoesNotCountInvisibleApprovedChildren() {
+        long article = createPublishedArticle(adminToken());
+        HttpResult rootCreated = post("/api/v1/articles/" + article + "/comments",
+                commentBody("待审根评论"), adminToken());
+        long root = rootCreated.data().path("id").asLong();
+        long child = insertComment(article, root, "已通过但根未审的子回复", "APPROVED");
+
+        assertThat(get("/api/v1/articles/" + article + "/comments", null)
+                .data().path("list").size()).isZero();
+        assertThat(commentCount(article)).isZero();
+
+        assertThat(put("/api/v1/admin/comments/" + root + "/status",
+                Map.of("status", "APPROVED"), adminToken()).status()).isEqualTo(200);
+        assertThat(commentCount(article)).isEqualTo(2);
+        JsonNode tree = get("/api/v1/articles/" + article + "/comments", null).data();
+        assertThat(tree.path("list").size()).isEqualTo(1);
+        assertThat(tree.path("list").get(0).path("children").size()).isEqualTo(1);
+        assertThat(tree.path("list").get(0).path("children").get(0).path("id").asText())
+                .isEqualTo(String.valueOf(child));
+    }
+
+    @Test
+    void cannotApproveChildWhenRootIsNotVisible() {
+        long article = createPublishedArticle(adminToken());
+        HttpResult rootCreated = post("/api/v1/articles/" + article + "/comments",
+                commentBody("待审根"), adminToken());
+        long root = rootCreated.data().path("id").asLong();
+        long child = insertComment(article, root, "待审子回复", "PENDING");
+
+        HttpResult result = put("/api/v1/admin/comments/" + child + "/status",
+                Map.of("status", "APPROVED"), adminToken());
+        assertThat(result.status()).isEqualTo(409);
+        assertThat(result.code()).isEqualTo("COMMENT_STATUS_INVALID");
+        assertThat(commentCount(article)).isZero();
+    }
+
+    @Test
+    void hidingRootExcludesCountAndTreeUntilRestored() {
+        long article = createPublishedArticle(adminToken());
+        long root = approvedComment(article, "根", adminToken());
+        approvedReply(article, root, "子", adminToken());
+        assertThat(commentCount(article)).isEqualTo(2);
+
+        assertThat(put("/api/v1/admin/comments/" + root + "/status",
+                Map.of("status", "HIDDEN"), adminToken()).status()).isEqualTo(200);
+        assertThat(commentCount(article)).isZero();
+        assertThat(get("/api/v1/articles/" + article + "/comments", null)
+                .data().path("list").size()).isZero();
+
+        assertThat(put("/api/v1/admin/comments/" + root + "/status",
+                Map.of("status", "APPROVED"), adminToken()).status()).isEqualTo(200);
+        assertThat(commentCount(article)).isEqualTo(2);
+    }
+
+    @Test
+    void crossArticleChildIsNotShownOrCountedAndReconcileDetectsDrift() {
+        long articleA = createPublishedArticle(adminToken());
+        long articleB = createPublishedArticle(adminToken());
+        long root = approvedComment(articleA, "A 的根", adminToken());
+        long child = approvedReply(articleA, root, "被搬到 B 的回复", adminToken());
+        jdbc.update("UPDATE comments SET article_id = ? WHERE id = ?", articleB, child);
+
+        // 子回复被 article_id 过滤，不能串到 A 的树里；B 没有根评论，也不能展示它
+        JsonNode treeA = get("/api/v1/articles/" + articleA + "/comments", null).data();
+        assertThat(treeA.path("list").get(0).path("children").size()).isZero();
+        assertThat(get("/api/v1/articles/" + articleB + "/comments", null)
+                .data().path("list").size()).isZero();
+
+        // 让对账绕过 10 分钟活跃窗口，按可见口径修正 A=1、B=0
+        jdbc.update("""
+                UPDATE comments SET created_at = DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 20 MINUTE),
+                                    updated_at = DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 20 MINUTE)
+                WHERE id IN (?, ?)
+                """, root, child);
+        reconcileService.run();
+        assertThat(commentCount(articleA)).isEqualTo(1);
+        assertThat(commentCount(articleB)).isZero();
+    }
+
+    private long insertComment(long article, Long rootId, String content, String status) {
+        jdbc.update("""
+                INSERT INTO comments (article_id, user_id, guest_name, root_id, parent_id,
+                                      reply_to_user_id, content, status, like_count, created_at, updated_at)
+                VALUES (?, NULL, '测试访客', ?, ?, NULL, ?, ?, 0,
+                        UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))
+                """, article, rootId, rootId, content, status);
+        return jdbc.queryForObject("""
+                SELECT id FROM comments WHERE article_id = ? AND content = ? ORDER BY id DESC LIMIT 1
+                """, Long.class, article, content);
+    }
+
+    private int commentCount(long article) {
+        return jdbc.queryForObject(
+                "SELECT comment_count FROM articles WHERE id = ?", Integer.class, article);
     }
 
     private long approvedComment(long article, String content, String token) {
@@ -439,6 +541,121 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM notifications WHERE recipient_id = ? AND type = ?",
                 Long.class, userId, type)).isEqualTo((long) expected);
+    }
+
+    // ------------------------------------------------------------ A 方案：审核范围与 D13
+
+    @Test
+    void editorModeratesOnlyOwnArticleComments() {
+        String authorName = unique("cma");
+        register(authorName, PASSWORD, null);
+        String author = editorToken(authorName);
+        long article = createPublishedArticle(author);
+
+        String commenterName = unique("cmb");
+        register(commenterName, PASSWORD, null);
+        String commenter = accessToken(commenterName, PASSWORD);
+        HttpResult comment = post("/api/v1/articles/" + article + "/comments",
+                commentBody("路过"), commenter);
+        assertThat(comment.status()).isEqualTo(201);
+        long commentId = comment.data().path("id").asLong();
+
+        // EDITOR 不带 articleId 查全站评论 → 403；带自己的 articleId → 200
+        assertThat(get("/api/v1/admin/comments", author).status()).isEqualTo(403);
+        assertThat(get("/api/v1/admin/comments?articleId=" + article, author).status()).isEqualTo(200);
+
+        // 其他 EDITOR 不能审、不能列
+        String otherName = unique("cmc");
+        register(otherName, PASSWORD, null);
+        String other = editorToken(otherName);
+        assertThat(put("/api/v1/admin/comments/" + commentId + "/status",
+                Map.of("status", "APPROVED"), other).status()).isEqualTo(403);
+        assertThat(get("/api/v1/admin/comments?articleId=" + article, other).status()).isEqualTo(403);
+
+        // 作者不能审自己的评论（防自审拿分）
+        HttpResult selfComment = post("/api/v1/articles/" + article + "/comments",
+                commentBody("自评"), author);
+        assertThat(selfComment.status()).isEqualTo(201);
+        long selfId = selfComment.data().path("id").asLong();
+        assertThat(put("/api/v1/admin/comments/" + selfId + "/status",
+                Map.of("status", "APPROVED"), author).status()).isEqualTo(403);
+
+        // 作者审他人评论 → 200；留言板与全站列表仍归 ADMIN
+        assertThat(put("/api/v1/admin/comments/" + commentId + "/status",
+                Map.of("status", "APPROVED"), author).status()).isEqualTo(200);
+        assertThat(get("/api/v1/admin/guestbook", author).status()).isEqualTo(403);
+        assertThat(get("/api/v1/admin/comments", adminToken()).status()).isEqualTo(200);
+    }
+
+    /** D13：隐藏是可逆状态不扣回积分；删除是终态才扣回；重新通过不重复发分。 */
+    @Test
+    void hiddenCommentKeepsPointsUntilDeleted() throws Exception {
+        long article = createPublishedArticle(adminToken());
+        String commenterName = unique("hp");
+        register(commenterName, PASSWORD, null);
+        String commenter = accessToken(commenterName, PASSWORD);
+        HttpResult comment = post("/api/v1/articles/" + article + "/comments",
+                commentBody("学到很多"), commenter);
+        long commentId = comment.data().path("id").asLong();
+
+        String admin = adminToken();
+        assertThat(put("/api/v1/admin/comments/" + commentId + "/status",
+                Map.of("status", "APPROVED"), admin).status()).isEqualTo(200);
+        // 每日首登 +5，评论过审 +5
+        awaitPointsBalance(commenterName, 10);
+
+        assertThat(put("/api/v1/admin/comments/" + commentId + "/status",
+                Map.of("status", "HIDDEN"), admin).status()).isEqualTo(200);
+        Thread.sleep(500);
+        assertThat(pointsBalance(commenterName)).as("隐藏不反转积分").isEqualTo(10);
+
+        assertThat(put("/api/v1/admin/comments/" + commentId + "/status",
+                Map.of("status", "APPROVED"), admin).status()).isEqualTo(200);
+        Thread.sleep(500);
+        assertThat(pointsBalance(commenterName)).as("重新通过不重复发分").isEqualTo(10);
+
+        assertThat(delete("/api/v1/admin/comments/" + commentId, admin).status()).isEqualTo(200);
+        awaitPointsBalance(commenterName, 5);
+    }
+
+    @Test
+    void selfLikeDoesNotGrantPoints() throws Exception {
+        String authorName = unique("sl");
+        register(authorName, PASSWORD, null);
+        String author = editorToken(authorName);
+        long article = createPublishedArticle(author);
+
+        // 每日首登 +5，发布 +10
+        awaitPointsBalance(authorName, 15);
+
+        assertThat(put("/api/v1/articles/" + article + "/reactions/like", Map.of(), author)
+                .status()).isEqualTo(200);
+        Thread.sleep(600);
+        assertThat(pointsBalance(authorName)).as("自赞不计分").isEqualTo(15);
+
+        String fanName = unique("fan");
+        register(fanName, PASSWORD, null);
+        String fan = accessToken(fanName, PASSWORD);
+        assertThat(put("/api/v1/articles/" + article + "/reactions/like", Map.of(), fan)
+                .status()).isEqualTo(200);
+        awaitPointsBalance(authorName, 16);
+    }
+
+    private int pointsBalance(String username) {
+        List<Integer> rows = jdbc.queryForList(
+                "SELECT balance FROM points_accounts WHERE user_id = ?", Integer.class,
+                userId(username));
+        return rows.isEmpty() ? 0 : rows.get(0);
+    }
+
+    private void awaitPointsBalance(String username, int expected) throws InterruptedException {
+        for (int i = 0; i < 50; i++) {
+            if (pointsBalance(username) == expected) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        assertThat(pointsBalance(username)).as("points balance").isEqualTo(expected);
     }
 
     // ------------------------------------------------------------ SSE

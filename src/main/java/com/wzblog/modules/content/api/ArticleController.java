@@ -119,8 +119,9 @@ public class ArticleController {
 
     @GetMapping("/{id}/edit")
     @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
-    public Result<ArticleEditVO> edit(@PathVariable Long id) {
-        return Result.ok(readService.edit(id));
+    public Result<ArticleEditVO> edit(@AuthenticationPrincipal CurrentUser currentUser,
+                                      @PathVariable Long id) {
+        return Result.ok(readService.edit(currentUser, id));
     }
 
     @PutMapping("/{id}")
@@ -133,41 +134,47 @@ public class ArticleController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
-    public Result<Void> delete(@PathVariable Long id) {
-        writeService.softDelete(id);
+    public Result<Void> delete(@AuthenticationPrincipal CurrentUser currentUser,
+                               @PathVariable Long id) {
+        writeService.softDelete(currentUser, id);
         return Result.ok();
     }
 
     @PostMapping("/{id}/publish")
     @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
-    public Result<ArticleEditVO> publish(@PathVariable Long id) {
-        return Result.ok(writeService.publish(id));
+    public Result<ArticleEditVO> publish(@AuthenticationPrincipal CurrentUser currentUser,
+                                         @PathVariable Long id) {
+        return Result.ok(writeService.publish(currentUser, id));
     }
 
     @PostMapping("/{id}/unpublish")
     @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
-    public Result<ArticleEditVO> unpublish(@PathVariable Long id) {
-        return Result.ok(writeService.unpublish(id));
+    public Result<ArticleEditVO> unpublish(@AuthenticationPrincipal CurrentUser currentUser,
+                                           @PathVariable Long id) {
+        return Result.ok(writeService.unpublish(currentUser, id));
     }
 
     @PostMapping("/{id}/pin")
-    @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
-    public Result<Void> pin(@PathVariable Long id) {
-        writeService.pin(id);
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<Void> pin(@AuthenticationPrincipal CurrentUser currentUser,
+                            @PathVariable Long id) {
+        writeService.pin(currentUser, id);
         return Result.ok();
     }
 
     @DeleteMapping("/{id}/pin")
-    @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
-    public Result<Void> unpin(@PathVariable Long id) {
-        writeService.unpin(id);
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<Void> unpin(@AuthenticationPrincipal CurrentUser currentUser,
+                              @PathVariable Long id) {
+        writeService.unpin(currentUser, id);
         return Result.ok();
     }
 
     @GetMapping("/{id}/revisions")
     @PreAuthorize("hasAnyRole('EDITOR', 'ADMIN')")
-    public Result<List<RevisionVO>> revisions(@PathVariable Long id) {
-        return Result.ok(readService.revisions(id));
+    public Result<List<RevisionVO>> revisions(@AuthenticationPrincipal CurrentUser currentUser,
+                                              @PathVariable Long id) {
+        return Result.ok(readService.revisions(currentUser, id));
     }
 
     @PostMapping("/{id}/revisions/{revisionNo}/restore")

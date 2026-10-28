@@ -229,19 +229,14 @@ public class ArticleReadService {
                 cached.visibility(), cached.createdAt(), cached.updatedAt());
     }
 
-    public ArticleEditVO edit(Long id) {
-        Article article = articleMapper.selectAnyById(id);
-        if (article == null || article.isDeleted()) {
-            throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
-        }
+    /** 编辑体只给作者本人和 ADMIN（ADMIN 只读，用于治理）；其他 EDITOR 按隐藏规则 403/404。 */
+    public ArticleEditVO edit(CurrentUser currentUser, Long id) {
+        Article article = requireReadableForAuthor(currentUser, id);
         return articleAssembler.toEdit(article);
     }
 
-    public List<RevisionVO> revisions(Long articleId) {
-        Article article = articleMapper.selectAnyById(articleId);
-        if (article == null || article.isDeleted()) {
-            throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
-        }
+    public List<RevisionVO> revisions(CurrentUser currentUser, Long articleId) {
+        Article article = requireReadableForAuthor(currentUser, articleId);
         List<ArticleRevision> revisions = revisionMapper.selectByArticleId(articleId);
         Set<Long> editorIds = new LinkedHashSet<>();
         for (ArticleRevision revision : revisions) {
@@ -318,19 +313,41 @@ public class ArticleReadService {
         }
     }
 
+    /** 可见性（A 方案）：PRIVATE/未发布只有作者本人和 ADMIN 可见；其他 EDITOR 一律 404。 */
     private void assertVisible(Article article, CurrentUser currentUser) {
         if (article == null || article.isDeleted()) {
             throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
         }
+        boolean ownerOrAdmin = isOwnerOrAdmin(article, currentUser);
         if (article.getStatus() == ArticleStatus.PUBLISHED) {
-            if (article.getVisibility() == ArticleVisibility.PRIVATE && !isEditor(currentUser)) {
+            if (article.getVisibility() == ArticleVisibility.PRIVATE && !ownerOrAdmin) {
                 throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
             }
             return;
         }
-        if (!isEditor(currentUser)) {
+        if (!ownerOrAdmin) {
             throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
         }
+    }
+
+    private Article requireReadableForAuthor(CurrentUser currentUser, Long id) {
+        Article article = articleMapper.selectAnyById(id);
+        if (article == null || article.isDeleted()) {
+            throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
+        }
+        if (!isOwnerOrAdmin(article, currentUser)) {
+            boolean publiclyVisible = article.getStatus() == ArticleStatus.PUBLISHED
+                    && article.getVisibility() == ArticleVisibility.PUBLIC;
+            throw publiclyVisible
+                    ? new BusinessException(ErrorCode.ARTICLE_FORBIDDEN)
+                    : new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
+        }
+        return article;
+    }
+
+    private boolean isOwnerOrAdmin(Article article, CurrentUser currentUser) {
+        return currentUser != null
+                && (currentUser.isAdmin() || Objects.equals(article.getAuthorId(), currentUser.id()));
     }
 
     private boolean isEditor(CurrentUser currentUser) {

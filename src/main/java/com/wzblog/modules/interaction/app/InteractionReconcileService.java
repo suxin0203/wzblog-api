@@ -73,7 +73,7 @@ public class InteractionReconcileService {
                 expected.computeIfAbsent(row.articleId(), key -> new HashMap<>())
                         .put(type, row.cnt());
             }
-            for (var row : commentMapper.countApprovedByArticle()) {
+            for (var row : commentMapper.countVisibleByArticleGrouped()) {
                 expected.computeIfAbsent(row.articleId(), key -> new HashMap<>())
                         .put(CounterType.COMMENT, row.cnt());
             }
@@ -125,6 +125,14 @@ public class InteractionReconcileService {
                 }
             }
             log.info("互动对账完成 articleCountersFixed={} commentLikesFixed={}", fixed, commentFixed);
+
+            var anomalies = commentMapper.findVisibilityAnomalies();
+            if (!anomalies.isEmpty()) {
+                log.warn("评论可见性异常 {} 条（首 10 条）：{}", anomalies.size(),
+                        anomalies.subList(0, Math.min(10, anomalies.size())));
+                auditRecorder.record(null, "INTERACTION_RECONCILE", "COMMENT", "VISIBILITY",
+                        null, "{\"anomalies\":" + anomalies.size() + "}");
+            }
         } finally {
             lock.release();
         }

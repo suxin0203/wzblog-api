@@ -68,7 +68,7 @@ public class UserAppService {
                 ? null : request.avatarKey().trim();
         // 头像引用计数：先 claim 新头像（不存在即 4xx），更新成功后 release 旧头像
         if (avatarKey != null) {
-            fileReferencePort.claimByKey(avatarKey, user.getId(), FileBizType.AVATAR);
+            fileReferencePort.claimByKey(avatarKey, user.getId(), currentUser, FileBizType.AVATAR);
         }
         String previousAvatar = user.getAvatarKey();
         userMapper.update(null, new LambdaUpdateWrapper<User>()

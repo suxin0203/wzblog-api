@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.wzblog.common.api.PageResult;
 import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.error.ErrorCode;
+import com.wzblog.common.media.FileReferencePort;
 import com.wzblog.common.security.Role;
 import com.wzblog.common.util.Times;
 import com.wzblog.common.web.CurrentUser;
@@ -50,19 +51,22 @@ public class AdminUserAppService {
     private final UserVoAssembler assembler;
     private final AuthAppService authAppService;
     private final TokenStateStore tokenStateStore;
+    private final FileReferencePort fileReferencePort;
 
     public AdminUserAppService(UserMapper userMapper,
                                LoginAuditMapper loginAuditMapper,
                                PasswordEncoder passwordEncoder,
                                UserVoAssembler assembler,
                                AuthAppService authAppService,
-                               TokenStateStore tokenStateStore) {
+                               TokenStateStore tokenStateStore,
+                               FileReferencePort fileReferencePort) {
         this.userMapper = userMapper;
         this.loginAuditMapper = loginAuditMapper;
         this.passwordEncoder = passwordEncoder;
         this.assembler = assembler;
         this.authAppService = authAppService;
         this.tokenStateStore = tokenStateStore;
+        this.fileReferencePort = fileReferencePort;
     }
 
     public PageResult<AdminUserVO> list(String keyword, Role role, UserStatus status,
@@ -209,6 +213,10 @@ public class AdminUserAppService {
                     .set(User::getUpdatedAt, now)
                     .setSql("version = version + 1"));
             authAppService.revokeAll(id, RevokeReason.ADMIN);
+            // G8：注销清 avatar_key 的同时释放旧头像引用，避免 ref_count 残留导致文件永不清理
+            if (target.getAvatarKey() != null && !target.getAvatarKey().isBlank()) {
+                fileReferencePort.releaseByKey(target.getAvatarKey());
+            }
         } finally {
             tokenStateStore.releaseAdminGuard();
         }

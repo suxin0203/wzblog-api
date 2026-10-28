@@ -237,6 +237,208 @@ class ContentIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void editorCannotEditOthersArticle() {
+        String admin = adminToken();
+        HttpResult published = createArticle(admin, articleBody(unique("cross"), "# One"));
+        long publishedId = published.data().path("id").asLong();
+        publish(String.valueOf(publishedId), admin);
+
+        HttpResult draft = createArticle(admin, articleBody(unique("crossd"), "body"));
+        long draftId = draft.data().path("id").asLong();
+
+        String editorName = unique("editor");
+        register(editorName, PASSWORD, null);
+        String editor = promoteToEditor(editorName);
+        String cover = insertFile(userId(editorName), "ARTICLE_COVER");
+
+        // 已公开文章：越权 403
+        HttpResult forbidden = put("/api/v1/articles/" + publishedId,
+                articleBody(unique("cross2"), "# Two", Map.of("version", 1, "coverKey", cover)),
+                editor);
+        assertThat(forbidden.status()).as("edit others: %s", forbidden.body()).isEqualTo(403);
+        assertThat(forbidden.code()).isEqualTo("ARTICLE_FORBIDDEN");
+        assertThat(refCount(cover)).isZero();
+        assertThat(get("/api/v1/articles/" + publishedId + "/edit", editor).status()).isEqualTo(403);
+
+        // 草稿：按不存在处理，不泄露存在性
+        HttpResult hidden = put("/api/v1/articles/" + draftId,
+                articleBody(unique("crossd2"), "body", Map.of("version", 0)), editor);
+        assertThat(hidden.status()).isEqualTo(404);
+        assertThat(hidden.code()).isEqualTo("ARTICLE_NOT_FOUND");
+        assertThat(get("/api/v1/articles/" + draftId + "/edit", editor).status()).isEqualTo(404);
+        assertThat(get("/api/v1/articles/" + draftId + "/revisions", editor).status()).isEqualTo(404);
+    }
+
+    @Test
+    void adminTakeoverThenEditWithAuditAndNotification() throws Exception {
+        String editorName = unique("take");
+        register(editorName, PASSWORD, null);
+        String editor = promoteToEditor(editorName);
+        HttpResult created = createArticle(editor, articleBody(unique("take"), "# One"));
+        long id = created.data().path("id").asLong();
+        long editorId = userId(editorName);
+
+        String admin = adminToken();
+        // 不接管不能改（草稿 → 404）
+        assertThat(put("/api/v1/articles/" + id,
+                articleBody(unique("take2"), "# Two", Map.of("version", 0)), admin)
+                .status()).isEqualTo(404);
+
+        HttpResult takeover = post("/api/v1/admin/articles/" + id + "/takeover",
+                Map.of("reason", "作者失联"), admin);
+        assertThat(takeover.status()).as("takeover: %s", takeover.body()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT author_id FROM articles WHERE id = ?", Long.class, id))
+                .isEqualTo(userId("bootstrap_admin"));
+        assertThat(auditCount("ARTICLE_TAKEOVER", String.valueOf(id))).isEqualTo(1L);
+        awaitNotification(editorId, "SYSTEM", 1);
+
+        // 接管后站主成为作者，可以挂自己上传的封面
+        String cover = insertFile(userId("bootstrap_admin"), "ARTICLE_COVER");
+        HttpResult updated = put("/api/v1/articles/" + id,
+                articleBody(unique("take3"), "# Three", Map.of("version", 1, "coverKey", cover)),
+                admin);
+        assertThat(updated.status()).as("update after takeover: %s", updated.body()).isEqualTo(200);
+        assertThat(refCount(cover)).isEqualTo(1);
+
+        // 原作者失去编辑权
+        assertThat(put("/api/v1/articles/" + id,
+                articleBody(unique("take4"), "# Four", Map.of("version", 2)), editor)
+                .status()).isEqualTo(404);
+    }
+
+    @Test
+    void editorCannotReferenceFilesUploadedByAnotherUser() {
+        String authorName = unique("owner");
+        register(authorName, PASSWORD, null);
+        String author = promoteToEditor(authorName);
+        HttpResult created = createArticle(author, articleBody(unique("idor"), "body"));
+        long id = created.data().path("id").asLong();
+
+        String uploaderName = unique("uploader");
+        register(uploaderName, PASSWORD, null);
+        String foreignKey = insertFile(userId(uploaderName), "CONTENT_IMAGE");
+
+        HttpResult rejected = put("/api/v1/articles/" + id,
+                articleBody(unique("idor2"), "![x](/media/" + foreignKey + ")",
+                        Map.of("version", 0)), author);
+        assertThat(rejected.status()).isEqualTo(403);
+        assertThat(rejected.code()).isEqualTo("FILE_PRESIGN_FORBIDDEN");
+        assertThat(refCount(foreignKey)).isZero();
+    }
+
+    /** D13：软删可逆——不释放图片、不反转积分；purge 才是终态。 */
+    @Test
+    void softDeleteKeepsImageRefsUntilPurge() throws Exception {
+        String editorName = unique("edimg");
+        register(editorName, PASSWORD, null);
+        String editor = promoteToEditor(editorName);
+        long editorId = userId(editorName);
+        String image = insertFile(editorId, "CONTENT_IMAGE");
+
+        HttpResult created = createArticle(editor,
+                articleBody(unique("restore"), "![x](/media/" + image + ")"));
+        long id = created.data().path("id").asLong();
+        assertThat(refCount(image)).isEqualTo(1);
+
+        String admin = adminToken();
+        assertThat(delete("/api/v1/articles/" + id, admin).status()).isEqualTo(200);
+        assertThat(refCount(image)).as("软删不释放引用").isEqualTo(1);
+        assertThat(auditCount("ARTICLE_DELETE", String.valueOf(id))).isEqualTo(1L);
+        awaitNotification(editorId, "SYSTEM", 1);
+
+        assertThat(post("/api/v1/admin/articles/" + id + "/restore", null, admin).status())
+                .isEqualTo(200);
+        assertThat(refCount(image)).as("恢复不需要重新 claim").isEqualTo(1);
+
+        assertThat(delete("/api/v1/articles/" + id, admin).status()).isEqualTo(200);
+        assertThat(delete("/api/v1/admin/articles/" + id + "/purge", admin).status()).isEqualTo(200);
+        assertThat(refCount(image)).as("purge 才释放引用").isZero();
+        assertThat(auditCount("ARTICLE_PURGE", String.valueOf(id))).isEqualTo(1L);
+    }
+
+    @Test
+    void restoreRevisionReclaimsRemovedImage() {
+        String editorName = unique("reved");
+        register(editorName, PASSWORD, null);
+        String editor = promoteToEditor(editorName);
+        String image = insertFile(userId(editorName), "CONTENT_IMAGE");
+
+        HttpResult created = createArticle(editor, articleBody(unique("revimg"), "# One"));
+        long id = created.data().path("id").asLong();
+
+        HttpResult withImage = put("/api/v1/articles/" + id,
+                articleBody(unique("revimg"), "![x](/media/" + image + ")",
+                        Map.of("version", 0)), editor);
+        assertThat(withImage.status()).as("add image: %s", withImage.body()).isEqualTo(200);
+        assertThat(refCount(image)).isEqualTo(1);
+
+        HttpResult removed = put("/api/v1/articles/" + id,
+                articleBody(unique("revimg"), "no image", Map.of("version", 1)), editor);
+        assertThat(removed.status()).as("remove image: %s", removed.body()).isEqualTo(200);
+        assertThat(refCount(image)).isZero();
+
+        HttpResult restored = post("/api/v1/articles/" + id + "/revisions/2/restore",
+                Map.of("changeNote", "restore image"), editor);
+        assertThat(restored.status()).as("restore revision: %s", restored.body()).isEqualTo(200);
+        assertThat(restored.data().path("contentMd").asText()).contains(image);
+        assertThat(refCount(image)).isEqualTo(1);
+    }
+
+    @Test
+    void editorCannotPinManageTaxonomyOrRestore() {
+        String editorName = unique("nopin");
+        register(editorName, PASSWORD, null);
+        String editor = promoteToEditor(editorName);
+        HttpResult created = createArticle(editor, articleBody(unique("pin"), "body"));
+        long id = created.data().path("id").asLong();
+        publish(String.valueOf(id), editor);
+
+        assertThat(post("/api/v1/articles/" + id + "/pin", null, editor).status()).isEqualTo(403);
+        assertThat(post("/api/v1/admin/categories",
+                Map.of("name", unique("分类"), "slug", unique("cat")), editor).status()).isEqualTo(403);
+        assertThat(post("/api/v1/admin/tags",
+                Map.of("name", unique("标签"), "slug", unique("tag")), editor).status()).isEqualTo(403);
+        assertThat(get("/api/v1/admin/articles", editor).status()).isEqualTo(403);
+
+        // 作者删除自己的文章后不能自行恢复
+        assertThat(delete("/api/v1/articles/" + id, editor).status()).isEqualTo(200);
+        assertThat(post("/api/v1/admin/articles/" + id + "/restore", null, editor).status())
+                .isEqualTo(403);
+        assertThat(post("/api/v1/admin/articles/" + id + "/restore", null, adminToken()).status())
+                .isEqualTo(200);
+    }
+
+    /** D9：接管后 purge，发布积分必须退给原作者，而不是接管的站主。 */
+    @Test
+    void purgeAfterTakeoverReversesPointsToOriginalAuthor() throws Exception {
+        String editorName = unique("pts");
+        register(editorName, PASSWORD, null);
+        String editor = promoteToEditor(editorName);
+        long editorId = userId(editorName);
+        HttpResult created = createArticle(editor, articleBody(unique("pts"), "body"));
+        long id = created.data().path("id").asLong();
+        publish(String.valueOf(id), editor);
+        // 每日首登 +5，发布 +10
+        awaitPointsBalance(editorName, 15);
+
+        String admin = adminToken();
+        assertThat(post("/api/v1/admin/articles/" + id + "/takeover", Map.of(), admin).status())
+                .isEqualTo(200);
+        // 软删不反转（D13）
+        assertThat(delete("/api/v1/articles/" + id, admin).status()).isEqualTo(200);
+        Thread.sleep(400);
+        assertThat(pointsBalance(editorName)).as("软删不反转积分").isEqualTo(15);
+
+        assertThat(delete("/api/v1/admin/articles/" + id + "/purge", admin).status()).isEqualTo(200);
+        awaitPointsBalance(editorName, 5);
+        Long reversalRows = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM points_ledger
+                WHERE user_id = ? AND type = 'ARTICLE_PUBLISH_REVERSAL' AND biz_id = ?
+                """, Long.class, editorId, String.valueOf(id));
+        assertThat(reversalRows).isEqualTo(1L);
+    }
+
+    @Test
     void revisionRestoreRendersAgainAndAppendsRevision() {
         String token = adminToken();
         String original = "# One\n\noriginal text";
@@ -347,6 +549,24 @@ class ContentIntegrationTest extends IdentityTestSupport {
         HttpResult degraded = get("/api/v1/articles/search?keyword=" + keyword.substring(0, 1), null);
         assertThat(degraded.status()).isEqualTo(200);
         assertThat(degraded.data().path("degraded").asBoolean()).isTrue();
+    }
+
+    @Test
+    void topAndArchiveQueriesAreReachable() {
+        String token = adminToken();
+        String id = createArticle(token, articleBody(unique("榜单"), "榜单正文")).data().path("id").asText();
+        publish(id, token);
+        jdbc.update("UPDATE articles SET view_count = 100000, view_internal_count = 70000, "
+                + "view_external_count = 30000 WHERE id = ?", Long.valueOf(id));
+
+        HttpResult top = get("/api/v1/articles/top?type=view&limit=10", null);
+        assertThat(top.status()).as("top: " + top.body()).isEqualTo(200);
+        assertThat(listIds(top.data())).contains(id);
+
+        HttpResult archive = get("/api/v1/articles/archive", null);
+        assertThat(archive.status()).as("archive: " + archive.body()).isEqualTo(200);
+        assertThat(archive.data().isArray()).isTrue();
+        assertThat(archive.data()).isNotEmpty();
     }
 
     @Test
@@ -505,6 +725,70 @@ class ContentIntegrationTest extends IdentityTestSupport {
 
     private HttpResult createArticle(String token, Map<String, Object> body) {
         return post("/api/v1/articles", body, token);
+    }
+
+    /** 提权为 EDITOR 后返回其 token；文章写接口要求 EDITOR/ADMIN。 */
+    private String promoteToEditor(String username) {
+        Long id = userId(username);
+        HttpResult updated = put("/api/v1/admin/users/" + id,
+                Map.of("nickname", "editor" + id, "role", "EDITOR", "status", "ACTIVE"), adminToken());
+        assertThat(updated.status()).as("promote: %s", updated.body()).isEqualTo(200);
+        return accessToken(username, PASSWORD);
+    }
+
+    private String insertFile(Long uploaderId, String bizType) {
+        String objectKey = "articles/2026/10/" + unique("img") + ".png";
+        jdbc.update("""
+                INSERT INTO files (bucket, object_key, uploader_id, biz_type, status, ref_count, size_bytes)
+                VALUES ('local', ?, ?, ?, 'ACTIVE', 0, 100)
+                """, objectKey, uploaderId, bizType);
+        return objectKey;
+    }
+
+    private int refCount(String objectKey) {
+        return jdbc.queryForObject("SELECT ref_count FROM files WHERE object_key = ?",
+                Integer.class, objectKey);
+    }
+
+    private int pointsBalance(String username) {
+        java.util.List<Integer> rows = jdbc.queryForList(
+                "SELECT balance FROM points_accounts WHERE user_id = ?", Integer.class,
+                userId(username));
+        return rows.isEmpty() ? 0 : rows.get(0);
+    }
+
+    private void awaitPointsBalance(String username, int expected) throws InterruptedException {
+        for (int i = 0; i < 50; i++) {
+            if (pointsBalance(username) == expected) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        assertThat(pointsBalance(username)).as("points balance").isEqualTo(expected);
+    }
+
+    private long auditCount(String action, String targetId) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM audit_logs WHERE action = ? AND target_id = ?",
+                Long.class, action, targetId);
+        return count == null ? 0L : count;
+    }
+
+    /** 治理通知是 AFTER_COMMIT 异步写入，轮询等待。 */
+    private void awaitNotification(Long recipientId, String type, long expected)
+            throws InterruptedException {
+        for (int i = 0; i < 50; i++) {
+            Long count = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM notifications WHERE recipient_id = ? AND type = ?",
+                    Long.class, recipientId, type);
+            if (count != null && count >= expected) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE recipient_id = ? AND type = ?",
+                Long.class, recipientId, type)).as("notification " + type).isGreaterThanOrEqualTo(expected);
     }
 
     private HttpResult publish(String id, String token) {

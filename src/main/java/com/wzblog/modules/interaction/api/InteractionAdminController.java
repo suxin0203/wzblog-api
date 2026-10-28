@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 评论/留言后台审核路由（EDITOR）。
+ * 评论/留言后台审核路由：评论 EDITOR（限自己文章）+ ADMIN；留言板仅 ADMIN。
  */
 @RestController
 @RequestMapping("/admin")
@@ -43,11 +43,12 @@ public class InteractionAdminController {
 
     @GetMapping("/comments")
     public ResponseEntity<Result<PageResult<CommentNodeVO>>> comments(
+            @AuthenticationPrincipal CurrentUser user,
             @RequestParam(value = "status", required = false) CommentStatus status,
             @RequestParam(value = "articleId", required = false) Long articleId,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        return ResponseEntity.ok(Result.ok(commentAppService.adminList(status, articleId,
+        return ResponseEntity.ok(Result.ok(commentAppService.adminList(user, status, articleId,
                 Math.max(1, page), clamp(pageSize))));
     }
 
@@ -70,6 +71,7 @@ public class InteractionAdminController {
     }
 
     @GetMapping("/guestbook")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Result<PageResult<GuestbookVO>>> guestbook(
             @RequestParam(value = "status", required = false) CommentStatus status,
             @RequestParam(value = "page", defaultValue = "1") int page,
@@ -79,6 +81,7 @@ public class InteractionAdminController {
     }
 
     @PutMapping("/guestbook/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Result<ModerationResultVO>> moderateGuestbook(
             @AuthenticationPrincipal CurrentUser user,
             @PathVariable("id") Long id,
@@ -90,6 +93,7 @@ public class InteractionAdminController {
     }
 
     @DeleteMapping("/guestbook/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Result<Object>> deleteGuestbook(@AuthenticationPrincipal CurrentUser user,
                                                           @PathVariable("id") Long id) {
         guestbookAppService.deleteByAdmin(user, id);

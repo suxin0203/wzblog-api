@@ -23,6 +23,15 @@ public interface CommentMapper extends BaseMapper<Comment> {
             content, status, like_count, created_at, updated_at, deleted_at
             """;
 
+    /**
+     * 公开树可见评论口径：根评论已过审未删；子评论已过审未删，且根评论同文章、已过审。
+     * 根评论软删时自身不计，但其已过审子评论仍可见（列表保留删除占位）。
+     */
+    String VISIBLE_FILTER = " c.status = 'APPROVED' AND c.deleted_at IS NULL "
+            + "AND (c.root_id IS NULL OR EXISTS ("
+            + "SELECT 1 FROM comments r WHERE r.id = c.root_id "
+            + "AND r.article_id = c.article_id AND r.status = 'APPROVED')) ";
+
     @Select("""
             <script>
             SELECT
@@ -55,7 +64,7 @@ public interface CommentMapper extends BaseMapper<Comment> {
             """)
     long countRootPage(@Param("articleId") Long articleId, @Param("viewerId") Long viewerId);
 
-    /** 根评论的子评论（APPROVED，时间升序），每根最多 limit+1 条以判定 hasMore。 */
+    /** 根评论的子评论（APPROVED + 本人 PENDING，时间升序）；限定文章，防止跨文章 root_id 脏数据串树。 */
     @Select("""
             <script>
             SELECT
@@ -63,23 +72,35 @@ public interface CommentMapper extends BaseMapper<Comment> {
             FROM comments
             WHERE root_id IN
             <foreach collection="rootIds" item="id" open="(" separator="," close=")">#{id}</foreach>
-              AND status = 'APPROVED' AND deleted_at IS NULL
+              AND article_id = #{articleId}
+              AND (status = 'APPROVED'
+                   <if test="viewerId != null"> OR (status = 'PENDING' AND user_id = #{viewerId})</if>)
+              AND deleted_at IS NULL
             ORDER BY created_at ASC, id ASC
             LIMIT 2147483647
             </script>
             """)
-    List<Comment> selectChildrenOf(@Param("rootIds") List<Long> rootIds);
+    List<Comment> selectChildrenOf(@Param("rootIds") List<Long> rootIds,
+                                   @Param("articleId") Long articleId,
+                                   @Param("viewerId") Long viewerId);
 
-    /** rootId 模式：直接分页返回该根的子评论。 */
+    /** rootId 模式：直接分页返回该根的子评论（同样限定文章；本人 PENDING 可见）。 */
     @Select("""
+            <script>
             SELECT
             """ + COLUMNS + """
             FROM comments
-            WHERE root_id = #{rootId} AND status = 'APPROVED' AND deleted_at IS NULL
+            WHERE root_id = #{rootId} AND article_id = #{articleId}
+              AND (status = 'APPROVED'
+                   <if test="viewerId != null"> OR (status = 'PENDING' AND user_id = #{viewerId})</if>)
+              AND deleted_at IS NULL
             ORDER BY created_at ASC, id ASC
             LIMIT #{limit} OFFSET #{offset}
+            </script>
             """)
     List<Comment> selectChildPage(@Param("rootId") Long rootId,
+                                  @Param("articleId") Long articleId,
+                                  @Param("viewerId") Long viewerId,
                                   @Param("limit") int limit, @Param("offset") int offset);
 
     @Select("SELECT " + COLUMNS + " FROM comments WHERE id = #{id}")
@@ -140,13 +161,34 @@ public interface CommentMapper extends BaseMapper<Comment> {
             """)
     long countAdminPage(@Param("status") CommentStatus status, @Param("articleId") Long articleId);
 
-    /** 对账：重算文章评论数（仅 APPROVED 未删）。 */
+    /** 公开树可见评论数（根 + 可见子回复）。 */
     @Select("""
-            SELECT article_id, COUNT(*) AS cnt FROM comments
-            WHERE status = 'APPROVED' AND deleted_at IS NULL
-            GROUP BY article_id
+            SELECT COUNT(*) FROM comments c
+            WHERE c.article_id = #{articleId} AND
+            """ + VISIBLE_FILTER)
+    int countVisibleByArticle(@Param("articleId") Long articleId);
+
+    /** 对账：按公开树可见口径重算文章评论数。 */
+    @Select("""
+            SELECT c.article_id, COUNT(*) AS cnt FROM comments c
+            WHERE
+            """ + VISIBLE_FILTER + """
+            GROUP BY c.article_id
             """)
-    List<CountRow> countApprovedByArticle();
+    List<CountRow> countVisibleByArticleGrouped();
+
+    /**
+     * 检测不可见/跨文章的已过审回复：只记录，不自动改状态。
+     */
+    @Select("""
+            SELECT c.id, c.article_id, c.root_id, r.article_id AS root_article_id,
+                   c.status AS child_status, r.status AS root_status
+            FROM comments c LEFT JOIN comments r ON r.id = c.root_id
+            WHERE c.deleted_at IS NULL AND c.root_id IS NOT NULL
+              AND (r.id IS NULL OR r.article_id <> c.article_id
+                   OR (c.status = 'APPROVED' AND r.status <> 'APPROVED'))
+            """)
+    List<VisibilityAnomalyRow> findVisibilityAnomalies();
 
     /** 评论点赞明细对账。 */
     @Select("""
@@ -165,6 +207,10 @@ public interface CommentMapper extends BaseMapper<Comment> {
     long countRecentByArticle(@Param("articleId") Long articleId, @Param("since") LocalDateTime since);
 
     record CountRow(Long articleId, Long cnt) {
+    }
+
+    record VisibilityAnomalyRow(Long id, Long articleId, Long rootId, Long rootArticleId,
+                                String childStatus, String rootStatus) {
     }
 
     record CommentLikeRow(Long id, Integer likeCount, Long cnt) {

@@ -5,6 +5,7 @@ import com.wzblog.modules.content.app.ArticleQueryService;
 import com.wzblog.modules.interaction.domain.Comment;
 import com.wzblog.modules.points.domain.event.OrderStatusChangedEvent;
 import com.wzblog.modules.points.domain.event.PointsAdjustedEvent;
+import com.wzblog.modules.content.domain.event.ArticleModeratedEvent;
 import com.wzblog.modules.interaction.domain.event.CommentApprovedEvent;
 import com.wzblog.modules.interaction.domain.event.CommentRemovedEvent;
 import com.wzblog.modules.interaction.domain.event.ReactionToggledEvent;
@@ -89,6 +90,31 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onCommentRemoved(CommentRemovedEvent event) {
         // 下架/删除不发通知（避免打扰），仅保留钩子供 M4 反向积分
+    }
+
+    /** 治理通知（A 方案 P0，复用 SYSTEM 类型，0 迁移）：下架/恢复/彻底删除/接管告知原作者。 */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onArticleModerated(ArticleModeratedEvent event) {
+        try {
+            if (event.authorId() == null || event.authorId().equals(event.moderatorId())) {
+                return;
+            }
+            String title = switch (event.action()) {
+                case "SOFT_DELETE" -> "你的文章已被管理员移入回收站";
+                case "RESTORE" -> "你的文章已从回收站恢复";
+                case "PURGE" -> "你的文章已被彻底删除";
+                case "TAKEOVER" -> "你的文章已被站主接管";
+                default -> "你的文章状态发生变更";
+            };
+            String reason = event.reason() == null || event.reason().isBlank()
+                    ? "" : "原因：" + event.reason();
+            notificationAppService.create(event.authorId(), event.moderatorId(), "SYSTEM",
+                    title, reason, "ARTICLE", String.valueOf(event.articleId()),
+                    "article_moderated:" + event.articleId() + ":" + event.action()
+                            + ":" + event.version());
+        } catch (Exception ex) {
+            log.warn("文章治理通知失败 articleId={} action={}", event.articleId(), event.action(), ex);
+        }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)

@@ -59,7 +59,7 @@ public class GoodsAppService {
     public GoodsVO create(CurrentUser admin, GoodsUpsertRequest request) {
         validate(request, null);
         if (request.imageKey() != null && !request.imageKey().isBlank()) {
-            fileReferencePort.claimByKey(request.imageKey().trim(), admin.id(), FileBizType.GOODS);
+            fileReferencePort.claimByKey(request.imageKey().trim(), admin.id(), admin, FileBizType.GOODS);
         }
         Goods goods = new Goods();
         goods.setName(request.name().trim());
@@ -92,7 +92,7 @@ public class GoodsAppService {
         String newImage = normalize(request.imageKey());
         String oldImage = existing.getImageKey();
         if (newImage != null && !newImage.equals(oldImage)) {
-            fileReferencePort.claimByKey(newImage, admin.id(), FileBizType.GOODS);
+            fileReferencePort.claimByKey(newImage, admin.id(), admin, FileBizType.GOODS);
         }
         existing.setName(request.name().trim());
         existing.setType(request.type().name());

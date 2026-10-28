@@ -18,6 +18,7 @@ import com.wzblog.modules.content.domain.ArticleVisibility;
 import com.wzblog.modules.content.domain.Category;
 import com.wzblog.modules.content.domain.Tag;
 import com.wzblog.modules.content.domain.event.ArticleDeletedEvent;
+import com.wzblog.modules.content.domain.event.ArticleModeratedEvent;
 import com.wzblog.modules.content.domain.event.ArticlePublishedEvent;
 import com.wzblog.modules.content.infra.config.ContentProperties;
 import com.wzblog.modules.content.infra.mapper.ArticleMapper;
@@ -25,6 +26,7 @@ import com.wzblog.modules.content.infra.mapper.ArticleRevisionMapper;
 import com.wzblog.modules.content.infra.mapper.ArticleTagMapper;
 import com.wzblog.modules.content.infra.mapper.CategoryMapper;
 import com.wzblog.modules.content.infra.mapper.TagMapper;
+import com.wzblog.modules.admin.app.AuditRecorder;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -52,6 +54,7 @@ public class ArticleWriteService {
     private final ArticleAssembler articleAssembler;
     private final ContentProperties properties;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditRecorder auditRecorder;
 
     public ArticleWriteService(ArticleMapper articleMapper,
                                ArticleTagMapper articleTagMapper,
@@ -63,7 +66,8 @@ public class ArticleWriteService {
                                FileReferencePort fileReferencePort,
                                ArticleAssembler articleAssembler,
                                ContentProperties properties,
-                               ApplicationEventPublisher eventPublisher) {
+                               ApplicationEventPublisher eventPublisher,
+                               AuditRecorder auditRecorder) {
         this.articleMapper = articleMapper;
         this.articleTagMapper = articleTagMapper;
         this.revisionMapper = revisionMapper;
@@ -75,6 +79,7 @@ public class ArticleWriteService {
         this.articleAssembler = articleAssembler;
         this.properties = properties;
         this.eventPublisher = eventPublisher;
+        this.auditRecorder = auditRecorder;
     }
 
     @Transactional
@@ -121,14 +126,14 @@ public class ArticleWriteService {
         replaceTags(article.getId(), tagIds);
         insertRevision(article, currentUser.id(), null);
 
-        claimImages(coverKey, rendered.imageKeys(), Set.of(), currentUser.id());
+        claimImages(coverKey, rendered.imageKeys(), Set.of(), currentUser.id(), currentUser);
         return new ArticleCreatedVO(article.getId(), article.getSlug(), article.getStatus().name(),
                 article.getVersion(), Times.toInstant(article.getPublishedAt()));
     }
 
     @Transactional
     public ArticleEditVO update(CurrentUser currentUser, Long id, ArticleUpdateRequest request) {
-        Article article = requireEditable(id);
+        Article article = requireAuthor(currentUser, id);
         String title = request.title().trim();
         markdownPipeline.validateSize(request.contentMd(), properties.getMaxContentBytes());
         MarkdownPipeline.MarkdownResult rendered = markdownPipeline.render(request.contentMd(), true);
@@ -178,14 +183,14 @@ public class ArticleWriteService {
         // 引用计数按差集同步：只 claim 新增、只 release 移除（交集不动，防净增）
         Set<String> oldAll = new LinkedHashSet<>(oldImages);
         Set<String> newAll = new LinkedHashSet<>(newImages);
-        claimImages(coverKey, rendered.imageKeys(), oldAll, article.getAuthorId());
+        claimImages(coverKey, rendered.imageKeys(), oldAll, article.getAuthorId(), currentUser);
         releaseImages(oldAll, newAll);
         return articleAssembler.toEdit(refreshed);
     }
 
     @Transactional
-    public ArticleEditVO publish(Long id) {
-        Article article = requireExisting(id);
+    public ArticleEditVO publish(CurrentUser currentUser, Long id) {
+        Article article = requireAuthor(currentUser, id);
         if (article.getStatus() == ArticleStatus.PUBLISHED) {
             return articleAssembler.toEdit(article);
         }
@@ -202,8 +207,8 @@ public class ArticleWriteService {
     }
 
     @Transactional
-    public ArticleEditVO unpublish(Long id) {
-        requireExisting(id);
+    public ArticleEditVO unpublish(CurrentUser currentUser, Long id) {
+        requireAuthor(currentUser, id);
         if (articleMapper.unpublish(id) == 0) {
             throw new BusinessException(ErrorCode.ARTICLE_STATE_INVALID);
         }
@@ -211,38 +216,54 @@ public class ArticleWriteService {
     }
 
     @Transactional
-    public void pin(Long id) {
+    public void pin(CurrentUser admin, Long id) {
+        requireAdmin(admin);
         Article article = requireExisting(id);
         if (article.getStatus() != ArticleStatus.PUBLISHED) {
             throw new BusinessException(ErrorCode.ARTICLE_PIN_NOT_ALLOWED);
         }
         articleMapper.pin(id);
+        auditRecorder.record(admin, "ARTICLE_PIN", "ARTICLE", String.valueOf(id),
+                "{\"isPinned\":false}", "{\"isPinned\":true}");
     }
 
     @Transactional
-    public void unpin(Long id) {
+    public void unpin(CurrentUser admin, Long id) {
+        requireAdmin(admin);
         requireExisting(id);
         articleMapper.unpin(id);
+        auditRecorder.record(admin, "ARTICLE_UNPIN", "ARTICLE", String.valueOf(id),
+                "{\"isPinned\":true}", "{\"isPinned\":false}");
     }
 
+    /**
+     * 软删（D13）：可逆状态，不释放图片引用、不反转积分；purge 才是终态。
+     * 作者可删自己的；ADMIN 可删任何（治理），治理动作审计并通知作者。
+     */
     @Transactional
-    public void softDelete(Long id) {
+    public void softDelete(CurrentUser currentUser, Long id) {
         Article article = articleMapper.selectAnyById(id);
         if (article == null) {
             throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
         }
+        boolean isAuthor = Objects.equals(article.getAuthorId(), currentUser.id());
+        if (!isAuthor && !currentUser.isAdmin()) {
+            throw forbiddenOrHidden(article);
+        }
         if (article.isDeleted()) {
             return;
         }
-        Set<String> images = referencedImages(article.getContentMd(), article.getCoverKey());
-        if (articleMapper.softDelete(id) > 0) {
-            releaseImages(images, Set.of());
-            eventPublisher.publishEvent(new ArticleDeletedEvent(article.getId(), article.getAuthorId()));
+        if (articleMapper.softDelete(id) > 0 && !isAuthor) {
+            auditRecorder.record(currentUser, "ARTICLE_DELETE", "ARTICLE", String.valueOf(id),
+                    "{\"deleted\":false}", "{\"deleted\":true}");
+            eventPublisher.publishEvent(new ArticleModeratedEvent(id, article.getAuthorId(),
+                    currentUser.id(), "SOFT_DELETE", null, article.getVersion() + 1));
         }
     }
 
     @Transactional
-    public void restore(Long id) {
+    public void restore(CurrentUser admin, Long id) {
+        requireAdmin(admin);
         Article article = articleMapper.selectAnyById(id);
         if (article == null || !article.isDeleted()) {
             throw new BusinessException(ErrorCode.ARTICLE_STATE_INVALID);
@@ -250,12 +271,17 @@ public class ArticleWriteService {
         if (articleMapper.restore(id) == 0) {
             throw new BusinessException(ErrorCode.ARTICLE_STATE_INVALID);
         }
-        claimImages(article.getCoverKey(), imageKeys(article.getContentMd()), Set.of(),
-                article.getAuthorId());
+        // D13：软删时没有释放引用，恢复无需重新 claim
+        auditRecorder.record(admin, "ARTICLE_RESTORE", "ARTICLE", String.valueOf(id),
+                "{\"deleted\":true}", "{\"deleted\":false}");
+        eventPublisher.publishEvent(new ArticleModeratedEvent(id, article.getAuthorId(),
+                admin.id(), "RESTORE", null, article.getVersion() + 1));
     }
 
+    /** purge 是终态：释放图片引用、反转发布积分、审计并通知作者。 */
     @Transactional
-    public void purge(Long id) {
+    public void purge(CurrentUser admin, Long id) {
+        requireAdmin(admin);
         Article article = articleMapper.selectAnyById(id);
         if (article == null) {
             throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
@@ -263,12 +289,44 @@ public class ArticleWriteService {
         if (!article.isDeleted()) {
             throw new BusinessException(ErrorCode.ARTICLE_PURGE_NOT_ALLOWED);
         }
+        Set<String> images = referencedImages(article.getContentMd(), article.getCoverKey());
         articleMapper.purge(id);
+        releaseImages(images, Set.of());
+        eventPublisher.publishEvent(new ArticleDeletedEvent(article.getId(), article.getAuthorId()));
+        auditRecorder.record(admin, "ARTICLE_PURGE", "ARTICLE", String.valueOf(id),
+                "{\"deleted\":true}", "{\"purged\":true}");
+        eventPublisher.publishEvent(new ArticleModeratedEvent(id, article.getAuthorId(),
+                admin.id(), "PURGE", null, article.getVersion()));
+    }
+
+    /** 接管（D2）：ADMIN 成为作者后才能改他人正文；审计 + 通知原作者。 */
+    @Transactional
+    public ArticleEditVO takeover(CurrentUser admin, Long id, String reason) {
+        requireAdmin(admin);
+        Article article = articleMapper.selectAnyById(id);
+        if (article == null || article.isDeleted()) {
+            throw new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
+        }
+        if (Objects.equals(article.getAuthorId(), admin.id())) {
+            return articleAssembler.toEdit(article); // 幂等
+        }
+        Long oldAuthorId = article.getAuthorId();
+        if (articleMapper.updateAuthor(id, admin.id()) == 0) {
+            throw new BusinessException(ErrorCode.ARTICLE_STATE_INVALID);
+        }
+        Article refreshed = articleMapper.selectAnyById(id);
+        String normalizedReason = reason == null || reason.isBlank() ? "" : reason.trim();
+        auditRecorder.record(admin, "ARTICLE_TAKEOVER", "ARTICLE", String.valueOf(id),
+                "{\"authorId\":" + oldAuthorId + "}",
+                "{\"authorId\":" + admin.id() + ",\"reason\":\"" + escapeJson(normalizedReason) + "\"}");
+        eventPublisher.publishEvent(new ArticleModeratedEvent(id, oldAuthorId, admin.id(),
+                "TAKEOVER", normalizedReason, refreshed.getVersion()));
+        return articleAssembler.toEdit(refreshed);
     }
 
     @Transactional
     public ArticleEditVO restoreRevision(CurrentUser currentUser, Long id, Integer revisionNo, String changeNote) {
-        Article article = requireEditable(id);
+        Article article = requireAuthor(currentUser, id);
         ArticleRevision revision = revisionMapper.selectOneRevision(id, revisionNo);
         if (revision == null) {
             throw new BusinessException(ErrorCode.ARTICLE_REVISION_NOT_FOUND);
@@ -288,8 +346,7 @@ public class ArticleWriteService {
         Article refreshed = articleMapper.selectAnyById(id);
         insertRevision(refreshed, currentUser.id(),
                 changeNote == null || changeNote.isBlank() ? "restore from r" + revisionNo : changeNote);
-        claimImages(refreshed.getCoverKey(), imageKeys(revision.getContentMd()), oldImages,
-                refreshed.getAuthorId());
+        claimRecordedImages(refreshed.getCoverKey(), imageKeys(revision.getContentMd()), oldImages);
         releaseImages(oldImages, newImages);
         return articleAssembler.toEdit(refreshed);
     }
@@ -302,8 +359,32 @@ public class ArticleWriteService {
         return article;
     }
 
-    private Article requireEditable(Long id) {
-        return requireExisting(id);
+    /** 内容动作只有作者本人；ADMIN 不接管也不能改（D2）。 */
+    private Article requireAuthor(CurrentUser currentUser, Long id) {
+        Article article = requireExisting(id);
+        if (!Objects.equals(article.getAuthorId(), currentUser.id())) {
+            throw forbiddenOrHidden(article);
+        }
+        return article;
+    }
+
+    private void requireAdmin(CurrentUser currentUser) {
+        if (currentUser == null || !currentUser.isAdmin()) {
+            throw new BusinessException(ErrorCode.AUTH_FORBIDDEN);
+        }
+    }
+
+    /** 已公开文章越权 → 403；草稿/私密/已删 → 404，不泄露存在性。 */
+    private BusinessException forbiddenOrHidden(Article article) {
+        boolean publiclyVisible = article.getStatus() == ArticleStatus.PUBLISHED
+                && article.getVisibility() == ArticleVisibility.PUBLIC;
+        return publiclyVisible
+                ? new BusinessException(ErrorCode.ARTICLE_FORBIDDEN)
+                : new BusinessException(ErrorCode.ARTICLE_NOT_FOUND);
+    }
+
+    private String escapeJson(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private Category requireCategory(Long categoryId) {
@@ -399,17 +480,33 @@ public class ArticleWriteService {
         return markdownPipeline.extractImageKeys(markdown == null ? "" : markdown, false);
     }
 
-    /** 只 claim 差集（newAll 之外的新引用）。 */
-    private void claimImages(String coverKey, Set<String> contentImages, Set<String> oldAll,
-                             Long ownerId) {
-        if (coverKey != null && !coverKey.isBlank() && !oldAll.contains(coverKey)) {
-            fileReferencePort.claimByKey(coverKey, ownerId, FileBizType.ARTICLE_COVER);
+    /** 只 claim 差集：请求中新出现、且上传者是文章作者或当前操作人的引用。 */
+    private void claimImages(String coverKey, Set<String> contentImages, Set<String> existing,
+                             Long ownerId, CurrentUser actor) {
+        if (isNewImage(coverKey, existing)) {
+            fileReferencePort.claimByKey(coverKey, ownerId, actor, FileBizType.ARTICLE_COVER);
         }
         for (String key : contentImages) {
-            if (!oldAll.contains(key)) {
-                fileReferencePort.claimByKey(key, ownerId, FileBizType.CONTENT_IMAGE);
+            if (!existing.contains(key)) {
+                fileReferencePort.claimByKey(key, ownerId, actor, FileBizType.CONTENT_IMAGE);
             }
         }
+    }
+
+    /** 恢复服务端已存内容：key 不来自请求，跳过上传者校验。 */
+    private void claimRecordedImages(String coverKey, Set<String> contentImages, Set<String> existing) {
+        if (isNewImage(coverKey, existing)) {
+            fileReferencePort.claimRecordedByKey(coverKey, FileBizType.ARTICLE_COVER);
+        }
+        for (String key : contentImages) {
+            if (!existing.contains(key)) {
+                fileReferencePort.claimRecordedByKey(key, FileBizType.CONTENT_IMAGE);
+            }
+        }
+    }
+
+    private boolean isNewImage(String key, Set<String> existing) {
+        return key != null && !key.isBlank() && !existing.contains(key);
     }
 
     private void releaseImages(Set<String> oldImages, Set<String> newImages) {

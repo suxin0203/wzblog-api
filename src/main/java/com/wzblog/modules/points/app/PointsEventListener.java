@@ -59,10 +59,11 @@ public class PointsEventListener {
         }
     }
 
+    /** purge 时触发（D13：软删不反转）；反转按原流水收款人（D9），不看当前 author_id。 */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onArticleDeleted(ArticleDeletedEvent event) {
         try {
-            pointsAppService.reverse(event.authorId(), PointsType.ARTICLE_PUBLISH_REVERSAL,
+            pointsAppService.reverseByBiz(PointsType.ARTICLE_PUBLISH_REVERSAL,
                     PointsType.ARTICLE_PUBLISH, "ARTICLE", String.valueOf(event.articleId()),
                     "article_delete:" + event.articleId());
         } catch (Exception ex) {
@@ -105,14 +106,18 @@ public class PointsEventListener {
             if (!event.isLike() || event.authorId() == null) {
                 return;
             }
+            // G1：自赞不计分（通知侧已跳过，这里补积分侧）
+            if (event.authorId().equals(event.actorId())) {
+                return;
+            }
             if (event.active()) {
                 pointsAppService.post(event.authorId(), PointsType.LIKE_RECEIVED,
                         properties.getLikeReceivedAmount(), "ARTICLE",
                         String.valueOf(event.articleId()),
                         "like:" + event.articleId() + ":" + event.actorId(), "收到点赞", null);
             } else {
-                // 精确反转该 actor 的点赞积分（biz 汇总会把其他点赞者一起扣掉）
-                pointsAppService.reverseExact(event.authorId(), PointsType.LIKE_REVERSED,
+                // 精确反转该 actor 的点赞积分；按原流水收款人退（D9，接管后不退给新作者）
+                pointsAppService.reverseExactByKey(PointsType.LIKE_REVERSED,
                         "like:" + event.articleId() + ":" + event.actorId(),
                         "unlike:" + event.articleId() + ":" + event.actorId(),
                         "ARTICLE", String.valueOf(event.articleId()));

@@ -144,18 +144,6 @@ public class PointsAppService {
         return new PointsResult(entry.getId(), -amount, newBalance, false);
     }
 
-    /** 精确反转：按正向幂等键回查实际发放额并反转（如 like:{articleId}:{actorId}）。 */
-    @Transactional
-    public PointsResult reverseExact(Long userId, PointsType reverseType, String positiveKey,
-                                     String reverseKey, String bizType, String bizId) {
-        LedgerEntry positive = ledgerMapper.selectByIdempotencyKey(positiveKey);
-        if (positive == null || positive.getAmount() <= 0) {
-            return PointsResult.empty(); // 未发放过
-        }
-        return post(userId, reverseType, -positive.getAmount(), bizType, bizId, reverseKey,
-                reverseType.name() + " 反转", null);
-    }
-
     /** 反转：按该业务已发放合计收敛，返回 null 表示无可反转。 */
     @Transactional
     public PointsResult reverse(Long userId, PointsType reverseType, PointsType positiveType,
@@ -167,6 +155,43 @@ public class PointsAppService {
         }
         return post(userId, reverseType, -(int) grantedTotal, bizType, bizId, idempotencyKey,
                 positiveType.name() + " 反转", null);
+    }
+
+    /**
+     * 按业务键找到原收款人并反转（D9）：文章被接管后 author_id 会变，
+     * 但历史积分属于原发放对象，必须按流水回查收款人。
+     */
+    @Transactional
+    public PointsResult reverseByBiz(PointsType reverseType, PointsType positiveType,
+                                     String bizType, String bizId, String idempotencyKeyPrefix) {
+        java.util.List<LedgerEntry> positives =
+                ledgerMapper.selectPositiveByBiz(positiveType.name(), bizType, bizId);
+        if (positives.isEmpty()) {
+            return PointsResult.empty();
+        }
+        java.util.Map<Long, Integer> byUser = new java.util.LinkedHashMap<>();
+        for (LedgerEntry entry : positives) {
+            byUser.merge(entry.getUserId(), entry.getAmount(), Integer::sum);
+        }
+        PointsResult last = PointsResult.empty();
+        for (var entry : byUser.entrySet()) {
+            last = post(entry.getKey(), reverseType, -entry.getValue(), bizType, bizId,
+                    idempotencyKeyPrefix + ":" + entry.getKey(),
+                    positiveType.name() + " 反转", null);
+        }
+        return last;
+    }
+
+    /** 精确反转（按正向幂等键回查收款人）：点赞取消在接管后也要退给原作者。 */
+    @Transactional
+    public PointsResult reverseExactByKey(PointsType reverseType, String positiveKey,
+                                          String reverseKey, String bizType, String bizId) {
+        LedgerEntry positive = ledgerMapper.selectByIdempotencyKey(positiveKey);
+        if (positive == null || positive.getAmount() <= 0) {
+            return PointsResult.empty();
+        }
+        return post(positive.getUserId(), reverseType, -positive.getAmount(), bizType, bizId,
+                reverseKey, reverseType.name() + " 反转", null);
     }
 
     // ------------------------------------------------------------ 内部

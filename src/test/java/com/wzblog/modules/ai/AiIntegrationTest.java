@@ -252,6 +252,18 @@ class AiIntegrationTest extends IdentityTestSupport {
         register(username, PASSWORD, null);
         assertThat(post("/api/v1/articles/" + articleId + "/ai/summary", Map.of(),
                 accessToken(username, PASSWORD)).status()).isEqualTo(403);
+
+        // A 方案：其他 EDITOR 也不能对他人文章用 AI 辅助
+        String editorName = unique("aed");
+        register(editorName, PASSWORD, null);
+        assertThat(put("/api/v1/admin/users/" + userId(editorName),
+                Map.of("nickname", "editor", "role", "EDITOR", "status", "ACTIVE"), token)
+                .status()).isEqualTo(200);
+        String editorToken = accessToken(editorName, PASSWORD);
+        assertThat(post("/api/v1/articles/" + articleId + "/ai/summary", Map.of(), editorToken)
+                .status()).isEqualTo(403);
+        assertThat(post("/api/v1/articles/" + articleId + "/ai/tags", Map.of(), editorToken)
+                .status()).isEqualTo(403);
     }
 
     @Test

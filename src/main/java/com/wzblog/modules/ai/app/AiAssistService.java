@@ -33,9 +33,10 @@ public class AiAssistService {
         this.properties = properties;
     }
 
-    public Map<String, Object> summarize(Long articleId, String style, Integer length) {
+    public Map<String, Object> summarize(com.wzblog.common.web.CurrentUser user, Long articleId,
+                                         String style, Integer length) {
         requireEnabled();
-        PublicArticleContent article = requireArticle(articleId);
+        PublicArticleContent article = requireArticle(user, articleId);
         int target = length == null ? 200 : Math.min(Math.max(length, 80), 300);
         String prompt = """
                 为以下博客文章写一段 %s 摘要：%d 字左右，单段纯文本，不用 Markdown、不加引号、不使用第一人称。
@@ -51,9 +52,10 @@ public class AiAssistService {
                         "completionTokens", completion.usage().completionTokens()));
     }
 
-    public Map<String, Object> suggestTags(Long articleId, Integer count) {
+    public Map<String, Object> suggestTags(com.wzblog.common.web.CurrentUser user, Long articleId,
+                                           Integer count) {
         requireEnabled();
-        PublicArticleContent article = requireArticle(articleId);
+        PublicArticleContent article = requireArticle(user, articleId);
         int target = count == null ? 5 : Math.min(Math.max(count, 1), 8);
         List<String> existing = articleQueryService.listTags(50).stream()
                 .map(tag -> tag.name() == null ? "" : tag.name())
@@ -89,11 +91,15 @@ public class AiAssistService {
         }
     }
 
-    private PublicArticleContent requireArticle(Long articleId) {
-        // EDITOR 可看全部文章，但辅助只基于公开内容生成
+    /** A 方案：AI 辅助只服务作者本人（ADMIN 也必须是作者），不对他人文章开放。 */
+    private PublicArticleContent requireArticle(com.wzblog.common.web.CurrentUser user,
+                                                Long articleId) {
         ArticleBrief brief = articleQueryService.getBrief(articleId);
         if (brief == null || brief.deleted()) {
             throw new BusinessException(ErrorCode.COMMON_NOT_FOUND);
+        }
+        if (user == null || !java.util.Objects.equals(brief.authorId(), user.id())) {
+            throw new BusinessException(ErrorCode.ARTICLE_FORBIDDEN);
         }
         PublicArticleContent content = articleQueryService.getPublicBySlug(brief.slug());
         if (content == null) {

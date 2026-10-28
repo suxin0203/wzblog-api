@@ -50,7 +50,7 @@ public class OperationsAppService {
     @Transactional
     public Banner createBanner(CurrentUser admin, Banner banner) {
         if (banner.getImageKey() != null && !banner.getImageKey().isBlank()) {
-            fileReferencePort.claimByKey(banner.getImageKey().trim(), admin.id(),
+            fileReferencePort.claimByKey(banner.getImageKey().trim(), admin.id(), admin,
                     FileBizType.BANNER);
         }
         banner.setId(null);
@@ -66,7 +66,7 @@ public class OperationsAppService {
         Banner existing = requireBanner(id);
         String oldImage = existing.getImageKey();
         if (request.getImageKey() != null && !request.getImageKey().equals(oldImage)) {
-            fileReferencePort.claimByKey(request.getImageKey(), admin.id(), FileBizType.BANNER);
+            fileReferencePort.claimByKey(request.getImageKey(), admin.id(), admin, FileBizType.BANNER);
         }
         existing.setTitle(request.getTitle());
         existing.setImageKey(request.getImageKey());

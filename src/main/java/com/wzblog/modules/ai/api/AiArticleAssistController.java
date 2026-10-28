@@ -37,7 +37,7 @@ public class AiArticleAssistController {
             @Valid @RequestBody(required = false) AiSummaryRequest request) {
         AiSummaryRequest effective = request == null ? new AiSummaryRequest(null, null) : request;
         return ResponseEntity.ok(Result.ok(
-                assistService.summarize(id, effective.style(), effective.length())));
+                assistService.summarize(user, id, effective.style(), effective.length())));
     }
 
     @PostMapping("/tags")
@@ -46,6 +46,6 @@ public class AiArticleAssistController {
             @PathVariable("id") Long id,
             @Valid @RequestBody(required = false) AiTagsRequest request) {
         AiTagsRequest effective = request == null ? new AiTagsRequest(null) : request;
-        return ResponseEntity.ok(Result.ok(assistService.suggestTags(id, effective.count())));
+        return ResponseEntity.ok(Result.ok(assistService.suggestTags(user, id, effective.count())));
     }
 }
