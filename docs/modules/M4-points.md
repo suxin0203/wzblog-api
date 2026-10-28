@@ -13,7 +13,7 @@
 | 包路径 | `com.wzblog.modules.points`（`api / app / domain / infra` 四层，见 02 第 4 节） |
 | 表 | `points_accounts`、`points_ledger`、`titles`、`user_titles`、`points_goods`、`points_orders`、`points_order_logs`（字段一律见 [03](../03-数据库设计.md) 3.4） |
 | 对外事件 | 发布：`OrderStatusChangedEvent`、`PointsAdjustedEvent`；订阅：`UserLoggedInEvent`、`ArticlePublishedEvent`、`ArticleDeletedEvent`、`CommentApprovedEvent`、`CommentRemovedEvent`、`ReactionToggledEvent` |
-| 依赖的 app 服务 | `SiteConfigService`（M0，配置与业务日时区）、`AuditRecorder#record`（M0 shared.audit）、`FileAppService#claimByKey(objectKey, ownerId, bizType)` / `#releaseByKey(objectKey)`（M5，商品图 `biz_type=GOODS`） |
+| 依赖的 app 服务 | `SiteConfigService`（M0，配置与业务日时区）、`AuditRecorder#record`（M0 shared.audit）、`FileAppService#claimByKey(objectKey, ownerId, actor, bizType)` / `#releaseByKey(objectKey)`（M5，商品图 `biz_type=GOODS`） |
 | 实现的端口 | `shared.profile.TitleLookup#findById/#findByIds`（M0 定义，M4 实现，供 M1 展示 `activeTitle`） |
 | 被依赖 | M3 消费订单/调分事件生成通知；M7 只读聚合看板 |
 | 事务边界 | 写操作全部在 `app` 层开事务；`api` 不开事务、不注入 Mapper |
@@ -64,7 +64,7 @@
 | | type | GoodsType | 是 | `PHYSICAL` / `TITLE` |
 | | titleId | String(BIGINT) | 条件 | `TITLE` 必填且称号存在未软删；`PHYSICAL` 必须为 null |
 | | description | String | 否 | ≤500 字符 |
-| | imageKey | String | 否 | ≤255；M5 已确认文件的对象 key（`biz_type=GOODS`）；新建/替换时 `claimByKey(imageKey, operatorId, GOODS)`，清空或替换旧值时 `releaseByKey(旧 imageKey)` |
+| | imageKey | String | 否 | ≤255；M5 已确认文件的对象 key（`biz_type=GOODS`）；新建/替换时 `claimByKey(imageKey, operatorId, currentUser, GOODS)`，清空或替换旧值时 `releaseByKey(旧 imageKey)` |
 | | pointsPrice | Integer | 是 | 1~100000（整数） |
 | | stock | Integer | 否 | 0~999999；`null` 或缺省 = 不限量 |
 | | status | GoodsStatus | 条件 | 创建可省略（默认 `ON_SALE`）；PUT 必填 |
@@ -129,15 +129,17 @@
 | `DAILY_LOGIN` | +5 | 5（每日 1 次） | `login:{userId}:{businessDate}`（`businessDate=yyyyMMdd`，Asia/Shanghai） | `UserLoggedInEvent`（`firstLoginOfDay=true` 才处理） | 不按 SUM 判断，直接靠幂等键 |
 | `ARTICLE_PUBLISH` | +10/篇 | 100 | `publish:{articleId}` | `ArticlePublishedEvent` | 锁内 SUM 求已得，`grant=MIN(10, 100-earned)` |
 | `COMMENT_APPROVED` | +5/条 | 50 | `comment_approved:{commentId}` | `CommentApprovedEvent` | 同上，`grant=MIN(5, 50-earned)` |
-| `LIKE_RECEIVED` | +1 | 无 | `like:{articleId}:{actorId}` | `ReactionToggledEvent`（`type=LIKE && active=true`） | 每 article+actor 仅首次 |
-| `LIKE_REVERSED` | -1 | 无 | `unlike:{articleId}:{actorId}` | `ReactionToggledEvent`（`active=false`） | 仅当存在对应 `LIKE_RECEIVED` 才扣 |
-| `ARTICLE_PUBLISH_REVERSAL` | `-min(当前余额, 该文已发放 ARTICLE_PUBLISH 正流水合计)` | 无 | `article_delete:{articleId}` | `ArticleDeletedEvent` | 按 `biz_type=ARTICLE,biz_id=articleId` 求和已发；余额不足时 `balance_after` 归 0，差额写 `remark` |
-| `COMMENT_APPROVED_REVERSAL` | -该评论实际发放 | 无 | `comment_removed:{commentId}` | `CommentRemovedEvent` | 未发放过则跳过 |
+| `LIKE_RECEIVED` | +1 | 无 | `like:{articleId}:{actorId}` | `ReactionToggledEvent`（`type=LIKE && active=true`） | 每 article+actor 仅首次；**自赞不计分**（G1：authorId==actorId 跳过） |
+| `LIKE_REVERSED` | -1 | 无 | `unlike:{articleId}:{actorId}` | `ReactionToggledEvent`（`active=false`） | 仅当存在对应 `LIKE_RECEIVED` 才扣；**按正向流水收款人退**（D9，接管后不退给新作者） |
+| `ARTICLE_PUBLISH_REVERSAL` | `-min(收款人当前余额, 该文已发放 ARTICLE_PUBLISH 正流水合计)` | 无 | `article_delete:{articleId}:{userId}` | `ArticleDeletedEvent`（**仅 purge 时发布，D13**） | 按 `biz_type=ARTICLE,biz_id=articleId` 查正向流水的**原收款人**（D9）；余额不足时 `balance_after` 归 0，差额写 `remark` |
+| `COMMENT_APPROVED_REVERSAL` | -该评论实际发放 | 无 | `comment_removed:{commentId}` | `CommentRemovedEvent`（**仅评论删除时发布，D13；HIDDEN 不发**） | 未发放过则跳过 |
 | `REDEEM` | -`total_points` | 无 | `redeem:{orderNo}`（下单请求幂等由 `points_orders.idempotency_key` 承担） | 下单 | 余额不足拒绝 |
 | `REFUND` | +`total_points` | 无 | `order-refund:{orderNo}` | 取消/驳回 | 不删原 `REDEEM` |
 | `ADMIN_ADJUST` | 任意 ± | 无 | `admin-adjust:{ULID}`（服务端生成） | `POST /admin/users/{userId}/points` | `operator_id` 必填，必写审计 |
 
-- 反转规则（`ARTICLE_PUBLISH_REVERSAL`）：反转金额 `= -min(当前余额, 该文已发放的 ARTICLE_PUBLISH 正流水合计)`；落账后 `balance_after = 0`，差额 `= 已发放合计 - 实际扣减额` 写入 `remark`（如「余额不足，少扣 X」）并打 WARN 指标；**任何情况下不产生负余额**（满足 `balance >= 0` 约束）。`min(...)=0`（余额已为 0）时不写流水（`amount≠0` 约束），仅 WARN + 指标，差额只记日志；差额进入 `remark` 仅指实际产生流水的情形。其它反转（`LIKE_REVERSED`、`COMMENT_APPROVED_REVERSAL`）金额不超过对应正向流水绝对值，余额不足同样扣至 0 不越界。
+- 反转规则（`ARTICLE_PUBLISH_REVERSAL`）：反转金额 `= -min(收款人当前余额, 该文已发放的 ARTICLE_PUBLISH 正流水合计)`；落账后 `balance_after = 0`，差额 `= 已发放合计 - 实际扣减额` 写入 `remark`（如「余额不足，少扣 X」）并打 WARN 指标；**任何情况下不产生负余额**（满足 `balance >= 0` 约束）。`min(...)=0`（余额已为 0）时不写流水（`amount≠0` 约束），仅 WARN + 指标，差额只记日志；差额进入 `remark` 仅指实际产生流水的情形。其它反转（`LIKE_REVERSED`、`COMMENT_APPROVED_REVERSAL`）金额不超过对应正向流水绝对值，余额不足同样扣至 0 不越界。
+- **反转按原流水收款人（D9）**：文章接管后 `author_id` 会变，但历史积分仍属于原作者；`ARTICLE_PUBLISH_REVERSAL` 按 `biz_type/biz_id` 回查正向流水的 `user_id`，`LIKE_REVERSED` 按 `like:{articleId}:{actorId}` 回查，**不按当前 `articles.author_id`** 退钱。
+- **D13 软删/隐藏不反转**：文章软删、评论 HIDDEN 不发反转事件；只有文章 purge、评论删除（终态）才反转；恢复/重新通过也不补发（因为没扣过）。
 - 日上限查询：`SUM(amount) WHERE user_id=? AND type=? AND amount>0 AND created_at>=? AND created_at<?`，区间为业务日 `[D-1 16:00Z, D 16:00Z)`；禁止 `DATE(created_at)=CURDATE()` 与 `LIKE 'prefix%'`（03 5.1 Q8）。
 - 上限值为默认常量，可被 `wzblog.points.*` 覆盖（08 4.2）；文档与测试以默认值为准。
 
@@ -288,7 +290,7 @@ record PointsResult(long ledgerId, long userId, int grantedAmount, int balanceAf
 |---|---|---|
 | `UserLoggedInEvent` | `login:{userId}:{businessDate}` | `firstLoginOfDay=false` 直接忽略；否则 `grant(DAILY_LOGIN,+5)` |
 | `ArticlePublishedEvent` | `publish:{articleId}` | `grant(ARTICLE_PUBLISH,+10)`，日上限 100；重发/重复投递由键挡住 |
-| `ArticleDeletedEvent` | `article_delete:{articleId}` | 求该文 `ARTICLE_PUBLISH` 已发额 X（按 `biz_id`），X>0 才 `grant(ARTICLE_PUBLISH_REVERSAL, -min(当前余额, X))`；余额归 0，差额记 `remark` |
+| `ArticleDeletedEvent` | `article_delete:{articleId}:{userId}` | 按正向流水收款人：求该文 `ARTICLE_PUBLISH` 已发额 X（按 `biz_id` 回查原收款人），X>0 才 `grant(ARTICLE_PUBLISH_REVERSAL, -min(收款人当前余额, X))`；余额归 0，差额记 `remark`（D9/D13：仅 purge 触发） |
 | `CommentApprovedEvent` | `comment_approved:{commentId}` | `grant(COMMENT_APPROVED,+5)`，日上限 50 |
 | `CommentRemovedEvent` | `comment_removed:{commentId}` | 查该评论 `COMMENT_APPROVED` 是否存在；存在才 `grant(COMMENT_APPROVED_REVERSAL,-X)` |
 | `ReactionToggledEvent` | `like:{articleId}:{actorId}` / `unlike:{articleId}:{actorId}` | 仅 `type=LIKE`；`active=true` → 给 `authorId` +1；`active=false` → 仅当 like 流水存在时 -1 |
@@ -353,7 +355,7 @@ record PointsResult(long ledgerId, long userId, int grantedAmount, int balanceAf
 | TC-M4-006 | 已发 10 评论（50 分） | 再投 2 个 `CommentApprovedEvent` | 不再加分（日上限 50） |
 | TC-M4-007 | 作者被赞 | 投递 `ReactionToggledEvent(active=true,type=LIKE)` | 作者 +1，键 `like:{articleId}:{actorId}` |
 | TC-M4-008 | 同上 | 投递 `active=false` | 追加 `LIKE_REVERSED -1`，余额回落；未点赞过时投递不写流水 |
-| TC-M4-009 | 文章已发放 10 分，当前余额 5（已消费 5） | 投递 `ArticleDeletedEvent` | 追加 1 条 `ARTICLE_PUBLISH_REVERSAL -5`（`-min(余额 5, 已发 10)`），`balance_after=0`，`remark` 含「余额不足，少扣 5」；余额不为负；重复投递同 `articleId` 不再扣 |
+| TC-M4-009 | 文章已发放 10 分，当前余额 5（已消费 5） | 投递 `ArticleDeletedEvent`（仅 purge 触发，D13） | 追加 1 条 `ARTICLE_PUBLISH_REVERSAL -5`（`-min(余额 5, 已发 10)`），`balance_after=0`，`remark` 含「余额不足，少扣 5」；余额不为负；重复投递同 `articleId` 不再扣 |
 | TC-M4-010 | 评论过审 +5 | 投递 `CommentRemovedEvent` | 追加 `COMMENT_APPROVED_REVERSAL -5`；未发放过则跳过 |
 | TC-M4-011 | 商品 stock=1，余额充足 | 50 并发 `POST /points/orders` | 1 个 201，49 个 422；`stock=0`、`sold_count=1`，无负库存 |
 | TC-M4-012 | 商品 stock=NULL | 并发下单 5 次 | 全部成功，`stock` 仍为 NULL，`sold_count+5` |
@@ -424,13 +426,15 @@ record PointsResult(long ledgerId, long userId, int grantedAmount, int balanceAf
 | 用户“确认收货”入口 | 复用 `transition` 仅 ADMIN，用户侧不提供（无对应路由） | 仍待契约确认 |
 | `TITLE` 订单是否跳过 `SHIPPED` | 不跳过，按 6.2 走 `APPROVED→SHIPPED→COMPLETED`，`SHIPPED` 不校验物流 | 已解决 |
 | 自己给自己点赞是否加分 | 不加分，`actorId==authorId` 时忽略事件 | 仍待产品确认 |
-| 反转时余额不足 | 已解决：`ARTICLE_PUBLISH_REVERSAL` 金额 = `-min(当前余额, 该文 ARTICLE_PUBLISH 正流水合计)`，`balance_after` 归 0，差额写 `remark`（「余额不足，少扣 X」）并告警；不产生负余额 | 已解决 |
+| 反转时余额不足 | 已解决：`ARTICLE_PUBLISH_REVERSAL` 金额 = `-min(收款人当前余额, 该文 ARTICLE_PUBLISH 正流水合计)`，`balance_after` 归 0，差额写 `remark`（「余额不足，少扣 X」）并告警；不产生负余额 | 已解决 |
+| 反转收款人 | 已解决（D9）：接管后 `author_id` 变化，但反转按原流水收款人（按 `biz`/正向 key 回查），不按当前 `articles.author_id` | 已解决 |
+| 站主积分收益 | P1（D11）：站主文章不计发布/被赞积分，当前实现仍会发放 | P1 |
 | 无 `Idempotency-Key` 的重复下单 | 直接 400；必须带键，24 小时内同键同体返回同一订单 | 已解决 |
 | 读取账户时行缺失 | 返回零值 VO；首个事件/下单时 `ensureAccount` 懒创建 | 已解决 |
 | 对账差异修复 | M4 `PointsReconcileJob` 自动追加 `ADMIN_ADJUST` 修复流水（`reconcile:{userId}:{date}`）并写审计 | 已解决 |
 | 订单号格式 | `PO` + `yyyyMMddHHmmss`（Asia/Shanghai）+ 8 位大写字母数字，共 24 位 | 已解决 |
 | “我的称号”出口 | 不新增路由；`GET /points/account` 返回 `titles` 与 `activeTitle` | 已解决 |
-| 商品图引用 | M4 → M5 `claimByKey/releaseByKey`（`biz_type=GOODS`） | 已解决 |
+| 商品图引用 | M4 → M5 `claimByKey(objectKey, ownerId, actor, GOODS)` / `releaseByKey`（owner=actor=当前管理员） | 已解决 |
 
 ### 16.1 契约问题（只报告，本文不改契约）
 

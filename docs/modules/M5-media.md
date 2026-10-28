@@ -13,7 +13,7 @@
 | 包路径 | `com.wzblog.modules.media` |
 | 表与存储 | `files`（含 `thumb_key`；定义见 [03-数据库设计 3.5.1](../03-数据库设计.md) 与 DDL）；MinIO 桶 `wzblog-public` / `wzblog-private` |
 | 对外事件 | 发布：无；订阅：无 |
-| 对外 app 服务 | `FileAppService#claimByKey(objectKey, ownerId, bizType)` / `#releaseByKey(objectKey)`（同步调用，均返回 fileId；00 §9.2） |
+| 对外 app 服务 | `FileAppService#claimByKey(objectKey, ownerId, actor, bizType)` / `#claimRecordedByKey(objectKey, bizType)` / `#releaseByKey(objectKey)`（同步调用；00 §9.2） |
 | 被谁依赖 | M2（封面/正文图）、M1（头像）、M7（轮播）、M4（商品图，见 13） |
 | 关键约束 | 大文件字节不经过 JVM；JVM 仅在 confirm 时流式读取 ≤5MB 做校验 |
 
@@ -192,14 +192,20 @@
 
 ## 9. 引用计数
 
-### 9.1 `claimByKey(objectKey, ownerId, bizType)` → fileId
+### 9.1 `claimByKey(objectKey, ownerId, actor, bizType)`
 
 - 语义：按 canonical `objectKey` 为「某业务实体新增一次引用」+1，并把 ORPHAN 拉回 ACTIVE；单条原子 SQL：
   `UPDATE files SET ref_count=ref_count+1, status='ACTIVE' WHERE object_key=? AND status IN ('ACTIVE','ORPHAN') AND ref_count>=0`，随后按 `uk_object` 读出 `id` 返回（当前 bizType 均落 `wzblog-public`，同 key 不会跨桶重复）。
 - 入参不含 fileId：业务表（`articles.cover_key`、正文图、`users.avatar_key`、`banners.image_key`、`goods.image_key`）只存 key，调用方无需先查 ID。
-- 权限：`uploader_id = ownerId`（跨用户复用一律拒绝，防 IDOR）；`biz_type` 非空时必须等于入参，为空则写入入参。
+- 权限：`uploader_id` 必须等于 `ownerId`（资源所有者，如文章作者）或 `actor.id()`（当前操作人），`actor` 为 ADMIN 时可越过；两者都不匹配一律 403，防 IDOR。`biz_type` 非空时必须等于入参，为空则写入入参。
 - **非幂等**：同一 (objectKey, 业务实体) 调两次即 +2；幂等责任在调用方——M2 保存文章时对「旧图集合 vs 新图集合」做差集，只对新增 claim、只对移除 release；M1 换头像先 claim 新、再 release 旧。
 - 失败：影响 0 行 → 按 key 查行区分 `FILE_NOT_FOUND`（不存在/已 DELETED）与 `FILE_CONFIRM_TIMEOUT`（仍 TEMP）；事务由调用方回滚。
+
+### 9.1.1 `claimRecordedByKey(objectKey, bizType)`
+
+- 用于恢复**服务端已存内容**（恢复已删文章、回滚修订）：key 取自 `articles.cover_key`、正文或 `article_revisions.content_md`，不来自请求体，因此跳过上传者校验，避免恢复含其他编辑上传图片的旧内容时误判 403。
+- 仍校验文件存在、未删除、非 TEMP，以及 `biz_type` 匹配；原子递增与失败处理同 9.1。
+- 调用方**禁止**把请求体中的新 key 走此方法，否则会绕过 IDOR 防护。
 
 ### 9.2 `releaseByKey(objectKey)` → fileId
 
@@ -208,7 +214,7 @@
 
 ### 9.3 差集与锁序
 
-- M2 解析旧/新正文图片 key 与 `cover_key`，按 objectKey 求差；直接以 key 调 `claimByKey`/`releaseByKey`，无需先解析 fileId。
+- M2 解析旧/新正文图片 key 与 `cover_key`，按 objectKey 求差；新增 key 走 `claimByKey`（请求输入）或 `claimRecordedByKey`（恢复已存内容），移除 key 走 `releaseByKey`，无需先解析 fileId。
 - 并发由 `ref_count = ref_count ± 1` 保证，禁止「读-改-写」；同一事务内按 objectKey 字典序处理避免死锁；清理只处理 `status='ORPHAN' AND ref_count=0`，双条件防误删。
 
 ## 10. 删除规则
@@ -244,7 +250,7 @@
 |---|---|---|---|---|
 | 预签名 | INSERT 独立事务 | — | 每次新 fileId | 签名失败置 DELETED |
 | 确认/去重 | 单事务 | `FOR UPDATE` + `WHERE status='TEMP'`；`idx_sha256` 查询 | fileId | 重读后按 ACTIVE 幂等返回；重复对象删除失败由清理补偿 |
-| claimByKey/releaseByKey | 调用方事务 | `ref_count = ref_count ± 1`，按 `uk_object` 定位 | 调用方差集 | 0 行由调用方回滚或忽略 |
+| claimByKey/claimRecordedByKey/releaseByKey | 调用方事务 | `ref_count = ref_count ± 1`，按 `uk_object` 定位 | 调用方差集 | 0 行由调用方回滚或忽略 |
 | 删除 | 状态事务 + 提交后删对象 | `status IN (...) AND ref_count=0` | fileId | DB 不回滚，对象删除重试（见 5.3） |
 | 清理 | 每行一事务 | ShedLock + `ref_count=0` | 行 id | 记录并跳过 |
 
@@ -330,7 +336,8 @@
 
 | 调用 | 方向 | 载荷 | 消费方 | 幂等 |
 |---|---|---|---|---|
-| `claimByKey(objectKey, ownerId, bizType)` | M1/M2/M4/M7 → M5 | objectKey、ownerId、bizType → fileId | 各业务保存流程 | 依赖调用方差集，M5 侧非幂等 |
+| `claimByKey(objectKey, ownerId, actor, bizType)` | M1/M2/M4/M7 → M5 | objectKey、ownerId、actor、bizType | 各业务保存流程 | 依赖调用方差集，M5 侧非幂等 |
+| `claimRecordedByKey(objectKey, bizType)` | M2 → M5 | objectKey、bizType | 恢复已删文章/回滚修订 | 依赖调用方差集，M5 侧非幂等 |
 | `releaseByKey(objectKey)` | M1/M2/M4/M7 → M5 | objectKey → fileId | 各业务删除/替换流程 | 0 行影响视为已释放 |
 | `GET /files/{id}/url` | 前端 → M5 | id、expires? | — | 幂等读 |
 
@@ -348,4 +355,4 @@
 | 6 | confirm 读对象 | 允许 ≤5MB 流经 JVM（有界、不落盘），不引入独立校验服务 | 架构负责人 |
 | 7 | FILE_ 错误码 | 已登记到 04 §7.7；新增码必须先改 04 | 已解决 |
 
-> 已冻结项（不再列为待确认）：跨模块接口统一为 `claimByKey(objectKey, ownerId, bizType)` / `releaseByKey(objectKey)`（00 §9.2）；object key 统一 `{biz}/{yyyy}/{MM}/{uuid}.{ext}`；缩略图 key 落 `files.thumb_key`；删除顺序「DB 先置 DELETED → 再删对象 → 失败重试」；去重返回既有 canonical fileId/objectKey 并删除本次重复对象。
+> 已冻结项（不再列为待确认）：跨模块接口统一为 `claimByKey(objectKey, ownerId, actor, bizType)` / `claimRecordedByKey(objectKey, bizType)` / `releaseByKey(objectKey)`（00 §9.2）；object key 统一 `{biz}/{yyyy}/{MM}/{uuid}.{ext}`；缩略图 key 落 `files.thumb_key`；删除顺序「DB 先置 DELETED → 再删对象 → 失败重试」；去重返回既有 canonical fileId/objectKey 并删除本次重复对象。

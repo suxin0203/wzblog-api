@@ -13,7 +13,7 @@
 | 包路径 | `com.wzblog.modules.content`（controller / app / domain / mapper / infra） |
 | 表 | `categories`、`tags`、`articles`、`article_tags`、`article_revisions`；只读 `files`（通过 M5，不直连） |
 | 对外事件 | 发布：`ArticlePublishedEvent`、`ArticleDeletedEvent`；订阅：无 |
-| 依赖 app 服务 | `UserQueryService#getBriefs(ids)`（M1，批量取作者昵称/头像）；`FileAppService#claimByKey(objectKey, ownerId, bizType)` / `#releaseByKey(objectKey)`（M5，同步、同事务；入参为对象 key） |
+| 依赖 app 服务 | `UserQueryService#getBriefs(ids)`（M1，批量取作者昵称/头像）；`FileAppService#claimByKey(objectKey, ownerId, actor, bizType)` / `#claimRecordedByKey(objectKey, bizType)` / `#releaseByKey(objectKey)`（M5，同步、同事务；入参为对象 key） |
 | 对外端口 | `ArticleQueryService`（M3/M6/M7，方法清单见 §16.1）；`ArticleCounterService#increment/#decrement`（M3，同事务计数，见 §16.2）；`ArticleStatsService#drainDailyViews(date)`（M7） |
 | 缓存 | Redis：详情 `content:article:{id}:v{version}`；阅读去重 `content:view:*`；日阅读计数 `content:views:{yyyyMMdd}`；热门/归档短缓存 |
 
@@ -53,26 +53,27 @@
 | GET | `/tags/{slug}` | PUBLIC | 标签详情 |
 | GET | `/me/articles` | USER | 作者文章列表，偏移分页 |
 | POST | `/articles` | EDITOR | 创建文章（DRAFT） |
-| GET | `/articles/{id}/edit` | EDITOR | 编辑详情（含 contentMd/version） |
-| PUT | `/articles/{id}` | EDITOR | 全量更新，乐观锁 + 修订 |
-| DELETE | `/articles/{id}` | EDITOR | 软删进回收站 |
-| POST | `/articles/{id}/publish` | EDITOR | 发布 / 重新发布 |
-| POST | `/articles/{id}/unpublish` | EDITOR | 下架 → ARCHIVED |
-| POST | `/articles/{id}/pin` | EDITOR | 置顶 |
-| DELETE | `/articles/{id}/pin` | EDITOR | 取消置顶 |
-| GET | `/articles/{id}/revisions` | EDITOR | 修订列表（不含 content_md） |
-| POST | `/articles/{id}/revisions/{revisionNo}/restore` | EDITOR | 回滚到指定修订 |
-| GET | `/admin/articles` | EDITOR | 后台列表（含回收站/状态/作者筛选） |
-| POST | `/admin/articles/{id}/restore` | EDITOR | 从回收站恢复 |
-| DELETE | `/admin/articles/{id}/purge` | ADMIN | 彻底删除（物理） |
-| GET | `/admin/categories` | EDITOR | 后台分类（含 DISABLED） |
-| POST | `/admin/categories` | EDITOR | 新建分类 |
-| PUT | `/admin/categories/{id}` | EDITOR | 更新分类 |
-| DELETE | `/admin/categories/{id}` | EDITOR | 删除分类（物理） |
-| GET | `/admin/tags` | EDITOR | 后台标签（含 DISABLED） |
-| POST | `/admin/tags` | EDITOR | 新建标签 |
-| PUT | `/admin/tags/{id}` | EDITOR | 更新标签 |
-| DELETE | `/admin/tags/{id}` | EDITOR | 删除标签（物理，级联 article_tags） |
+| GET | `/articles/{id}/edit` | EDITOR（作者/ADMIN 只读） | 编辑详情（含 contentMd/version） |
+| PUT | `/articles/{id}` | EDITOR（作者本人） | 全量更新，乐观锁 + 修订 |
+| DELETE | `/articles/{id}` | EDITOR（作者本人或 ADMIN） | 软删进回收站（D13：不释放图片/不反转积分） |
+| POST | `/articles/{id}/publish` | EDITOR（作者本人） | 发布 / 重新发布 |
+| POST | `/articles/{id}/unpublish` | EDITOR（作者本人） | 下架 → ARCHIVED |
+| POST | `/articles/{id}/pin` | ADMIN | 置顶 |
+| DELETE | `/articles/{id}/pin` | ADMIN | 取消置顶 |
+| GET | `/articles/{id}/revisions` | EDITOR（作者/ADMIN 只读） | 修订列表（不含 content_md） |
+| POST | `/articles/{id}/revisions/{revisionNo}/restore` | EDITOR（作者本人） | 回滚到指定修订 |
+| GET | `/admin/articles` | ADMIN | 后台列表（含回收站/状态/作者筛选） |
+| POST | `/admin/articles/{id}/restore` | ADMIN | 从回收站恢复 |
+| DELETE | `/admin/articles/{id}/purge` | ADMIN | 彻底删除（物理；释放图片 + 反转积分） |
+| POST | `/admin/articles/{id}/takeover` | ADMIN | 接管作者（v1.6；改 author_id + 审计 + 通知） |
+| GET | `/admin/categories` | ADMIN | 后台分类（含 DISABLED） |
+| POST | `/admin/categories` | ADMIN | 新建分类 |
+| PUT | `/admin/categories/{id}` | ADMIN | 更新分类 |
+| DELETE | `/admin/categories/{id}` | ADMIN | 删除分类（物理） |
+| GET | `/admin/tags` | ADMIN | 后台标签（含 DISABLED） |
+| POST | `/admin/tags` | ADMIN | 新建标签 |
+| PUT | `/admin/tags/{id}` | ADMIN | 更新标签 |
+| DELETE | `/admin/tags/{id}` | ADMIN | 删除标签（物理，级联 article_tags） |
 
 > **路由匹配优先级**：字面路由优先于 `{slug}`；`/articles/search`、`/articles/pinned`、`/articles/top`、`/articles/archive` 是固定接口，不会被当作 slug 解析。`GET /articles/{id}/edit` 是两段路径（`{id}` 为文章 ID），与单段 `GET /articles/{slug}` 互不冲突。
 > 用户可自行创建 slug 时仍拒绝保留字 `search/pinned/top/archive`（400 `COMMON_VALIDATION_ERROR`），避免与前端直链混淆。
@@ -120,7 +121,7 @@
 | `ViewReq` | source | enum | 否 | `internal` / `external`；缺省按 Referer 判定 |
 
 > 所有 ID 入参按字符串接收并校验为无符号整数；JSON 出参 ID 一律字符串。
-> **媒体路径约定**：`coverKey` 传对象 key（不含域名/前缀，来源为 M5 上传确认返回的 `objectKey`）；Markdown 正文图片统一写相对路径 `![alt](/media/{objectKey})`，不写绝对域名。服务端提取引用时识别 `/media/` 前缀并去掉，得到对象 key 后交给 `FileAppService#claimByKey/releaseByKey`；渲染输出保留 `/media/{objectKey}`，由前端/网关按公开前缀拼接。
+> **媒体路径约定**：`coverKey` 传对象 key（不含域名/前缀，来源为 M5 上传确认返回的 `objectKey`）；Markdown 正文图片统一写相对路径 `![alt](/media/{objectKey})`，不写绝对域名。服务端提取引用时识别 `/media/` 前缀并去掉，得到对象 key 后交给 `FileAppService#claimByKey/claimRecordedByKey/releaseByKey`；渲染输出保留 `/media/{objectKey}`，由前端/网关按公开前缀拼接。
 
 ### 4.2 响应 VO
 
@@ -168,8 +169,9 @@
 | 下架 | status=PUBLISHED | `SET status='ARCHIVED', is_pinned=0, version=version+1 WHERE status='PUBLISHED'` | 影响 0 行 → `ARTICLE_STATE_INVALID` |
 | 置顶 | status=PUBLISHED 且未删 | `SET is_pinned=1` | 幂等；DRAFT/ARCHIVED → `ARTICLE_PIN_NOT_ALLOWED` |
 | 取消置顶 | 任意未删 | `SET is_pinned=0` | 幂等 |
-| 软删 | `deleted_at IS NULL` | `SET deleted_at=NOW(3), is_pinned=0` | 保留原 status；已删幂等 |
-| 恢复 | `deleted_at IS NOT NULL` | `SET deleted_at=NULL` | 保留原 status，不恢复置顶 |
+| 软删 | `deleted_at IS NULL` | `SET deleted_at=NOW(3), is_pinned=0` | 保留原 status；已删幂等；D13：不释放图片、不反转积分 |
+| 恢复 | `deleted_at IS NOT NULL` | `SET deleted_at=NULL` | 保留原 status，不恢复置顶；不重新 claim 图片、不补发积分 |
+| 接管 | 未删 | `SET author_id=当前ADMIN, version=version+1` | 审计 `ARTICLE_TAKEOVER` + SYSTEM 通知原作者；幂等 |
 | 彻底删除 | 仅 ADMIN，且 `deleted_at IS NOT NULL` | `DELETE FROM articles WHERE id=?` | 级联 tags/revisions/comments/daily_stats |
 
 可见性矩阵（`✓`=可见，`404`=按不存在处理，`管理侧`=EDITOR/ADMIN）：
@@ -192,7 +194,7 @@
 ```
 校验 DTO → 生成/校验 slug → CommonMark(禁用 raw HTML) → HTML → OWASP Sanitizer
 → content_text / toc_json / word_count / reading_seconds / 自动摘要
-→ 图片 key 新旧差量（`claimByKey/releaseByKey`，同事务）→ 保存 md+派生列 → 修订记录
+→ 图片 key 新旧差量（新增走 `claimByKey`/`claimRecordedByKey`，移除走 `releaseByKey`，同事务）→ 保存 md+派生列 → 修订记录
 → 提交后清缓存（version 已变即自然失效）
 ```
 
@@ -203,8 +205,8 @@
 - 纯文本：去标签、解码实体、折叠空白、保留段落 `\n`，写 `content_text`。
 - 字数：CJK 字符数 + 拉丁词数；`reading_seconds = ceil(cjk/300 + words/200)`，最小 60。
 - 摘要：用户未填时取 `content_text` 前 200 字符，在 120~200 区间最后一个 `。！？.!?` 处截断，否则硬截 200；≤300。
-- 图片引用差：从 md 的 `![...](/media/{objectKey})` 提取 key 集合（识别并剥离 `/media/` 前缀，非该前缀的图片直接 422）+ `coverKey`；`new-old` 逐个 `claimByKey(objectKey, authorId, bizType)`，`old-new` 逐个 `releaseByKey(objectKey)`；**先 claim 后 release**，避免同文复用图片 ref_count 归零。
-- 封面与正文差异：封面 bizType=`ARTICLE_COVER`，正文=`CONTENT_IMAGE`；软删 release 全部，恢复重新 claim；purge 时若已软删则不再 release。
+- 图片引用差：从 md 的 `![...](/media/{objectKey})` 提取 key 集合（识别并剥离 `/media/` 前缀，非该前缀的图片直接 422）+ `coverKey`；`new-old` 中，请求输入的新 key 走 `claimByKey(objectKey, authorId, currentUser, bizType)`（上传者须为文章作者或当前操作人，ADMIN 可越过），回滚修订等已存内容走 `claimRecordedByKey(objectKey, bizType)`；`old-new` 逐个 `releaseByKey(objectKey)`；**先 claim 后 release**，避免同文复用图片 ref_count 归零。
+- 封面与正文差异：封面 bizType=`ARTICLE_COVER`，正文=`CONTENT_IMAGE`；**软删/恢复不 release/re-claim（D13）**；只有 purge 才释放全部引用。
 - 读取：详情直接返回库中 `content_html` 与 `toc_json`，不解析 Markdown、不清洗、不重算；`img.src` 保持 `/media/{objectKey}` 相对路径。
 
 ## 8. 搜索与分页
@@ -250,11 +252,12 @@ AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id=a.id AND at.tag_id
 | 场景 | 流程 |
 |---|---|
 | 发文 | 校验 → 生成 slug → 渲染流水线 → `INSERT articles(DRAFT)` + 全量 tags + 修订 #1 → `claimByKey` 图片 → 提交 → 201（不发事件、不发积分） |
-| 更新 | 读文章 → 归属/可见性校验 → `version` 比对 → 渲染 → 图片差量 `claimByKey/releaseByKey` → `UPDATE ... version=version+1 WHERE version=?` → 插入修订 → 提交（缓存 key 天然换版本） |
+| 更新 | 读文章 → **仅作者本人**（非作者公开 403/隐藏 404）→ `version` 比对 → 渲染 → 图片差量（`claimByKey` 校验作者/操作人，`releaseByKey`）→ `UPDATE ... version=version+1 WHERE version=?` → 插入修订 → 提交（缓存 key 天然换版本） |
 | 发布 | 归属校验 → 条件更新 status/published_at → 提交 → `ArticlePublishedEvent`（仅 `visibility=PUBLIC` 首发发；AFTER_COMMIT，M4 发积分）→ 200 |
 | 删除 | 条件置 `deleted_at`、清置顶 → 释放图片引用 → 提交 → `ArticleDeletedEvent`（AFTER_COMMIT，M4 按 `article_delete:{articleId}` 反转一次发布奖励） |
-| 恢复 | 条件清 `deleted_at` → 重新 claim 图片 → 提交 → 200（不重发事件、不重新发发布奖励） |
-| 彻底删除 | ADMIN 校验 → 要求已软删 → `DELETE`（级联）→ 写审计 → 提交（不额外发事件，软删时已发） |
+| 恢复 | ADMIN 校验 → 条件清 `deleted_at` → 不重新 claim 图片、不补发积分 → 审计 `ARTICLE_RESTORE` + 通知 → 提交 → 200 |
+| 彻底删除 | ADMIN 校验 → 要求已软删 → 释放图片引用 → `DELETE`（级联）→ 写审计 `ARTICLE_PURGE` → 发 `ArticleDeletedEvent`（积分按原收款人反转）→ 通知 → 提交 |
+| 接管 | ADMIN 校验 → 改 `author_id` 为当前 ADMIN、version+1 → 审计 `ARTICLE_TAKEOVER` → 发 `ArticleModeratedEvent(TAKEOVER)` → 通知原作者 |
 | 搜索 | 解析关键词 → <2 字降级 → `MATCH` + EXISTS + 过滤 → 应用层加权/衰减 → `getBriefs` 批量补作者 → 单页返回 |
 | 详情 | slug 查 `uk_slug` → 可见性判定 → 读缓存（miss 回源，单飞）→ `getBriefs` 批量补作者 → 返回 html/toc（零渲染） |
 
@@ -281,13 +284,18 @@ AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id=a.id AND at.tag_id
 | 操作 | 角色 | 归属校验 | 说明 |
 |---|---|---|---|
 | 公开列表/搜索/详情/分类/标签/阅读 | PUBLIC/OPTIONAL | — | 隐藏状态统一 404 |
-| `/me/articles` | USER | 仅本人 `author_id` | 任意登录用户都可调用；普通 USER 通常没有文章（列表为空），不因此获得写权限 |
-| 创建/更新/删除/发布/下架/置顶/修订/回滚 | EDITOR | ADMIN 全部；EDITOR 可编辑全部 | 路由门禁为 EDITOR（含 ADMIN）；USER 一律 403，不存在“USER 作者” |
-| 后台文章列表/恢复 | EDITOR | 全部 | 含回收站 |
-| 彻底删除 | ADMIN | 全部 | 必须已软删 |
-| 分类/标签 CRUD | EDITOR | — | 物理删除 |
-| PRIVATE | EDITOR/ADMIN | 直链仅管理侧可见 | 不进列表/搜索 |
+| `/me/articles` | USER | 仅本人 `author_id` | 普通 USER 通常没有文章（列表为空），不因此获得写权限 |
+| 创建文章 | EDITOR/ADMIN | 作者=当前用户 | USER 一律 403 |
+| 更新/发布/下架/删除自己的文章/修订回滚 | 作者本人 | 仅作者 | 非作者写公开文章 403 `ARTICLE_FORBIDDEN`；草稿/私密/已删 404 `ARTICLE_NOT_FOUND` |
+| 读编辑体/修订 | 作者或 ADMIN | ADMIN 只读 | 其他 EDITOR 403/404 |
+| 管理员软删他人文章 | ADMIN | — | 审计 `ARTICLE_DELETE` + 通知；D13 不释放图片/不反转积分 |
+| 后台文章列表/恢复/purge/置顶 | ADMIN | — | 恢复/purge/置顶均审计；purge 释放图片 + 反转积分 |
+| 接管 | ADMIN | — | 改 author_id + 审计 `ARTICLE_TAKEOVER` + 通知原作者 |
+| 分类/标签 CRUD | ADMIN | — | 物理删除；作者只选已有 |
+| PRIVATE / 未发布 | 作者或 ADMIN | 仅作者/站主可见 | 其他 EDITOR 一律 404；不进列表/搜索 |
 | UNLISTED | 任何人持链接 | — | 不进列表/搜索，仅直链可读 |
+
+> **图片归属**：保存时新增/更换的图片，上传者必须是文章作者或当前操作人（ADMIN 可越过）；引用第三方文件返回 403 `FILE_PRESIGN_FORBIDDEN`。回滚修订等已存内容走 `claimRecordedByKey`，不校验上传者。文章软删不释放引用，purge 才释放。
 
 ## 13. 错误码
 
@@ -378,8 +386,9 @@ AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id=a.id AND at.tag_id
 | 事件/调用 | 方向 | 载荷/签名 | 消费方 | 幂等 |
 |---|---|---|---|---|
 | `ArticlePublishedEvent` | M2 → M4 | articleId, authorId, title, publishedAt | M4 发发文积分（仅 `PUBLIC` 首发发事件） | `publish:{articleId}` |
-| `ArticleDeletedEvent` | M2 → M4 | articleId, authorId | M4 反转发布奖励（**仅软删时发一次**） | `article_delete:{articleId}` |
-| `FileAppService#claimByKey(objectKey, ownerId, bizType)` / `#releaseByKey(objectKey)` | M2 → M5 | 对象 key、ownerId、bizType | 发文/更新/删除/恢复 | 同事务同步，按 key 幂等 |
+| `ArticleDeletedEvent` | M2 → M4 | articleId, authorId | M4 反转发布奖励（**仅 purge 时发一次**；反转按原流水收款人） | `article_delete:{articleId}:{userId}` |
+| `ArticleModeratedEvent` | M2 → M3 | articleId, authorId, moderatorId, action, reason, version | M3 生成 SYSTEM 通知（SOFT_DELETE/RESTORE/PURGE/TAKEOVER） | `article_moderated:{articleId}:{action}:{version}` |
+| `FileAppService#claimByKey(objectKey, ownerId, actor, bizType)` / `#claimRecordedByKey(objectKey, bizType)` / `#releaseByKey(objectKey)` | M2 → M5 | 对象 key、ownerId、actor、bizType | 发文/更新/删除/恢复/回滚 | 同事务同步，调用方按差集保证幂等 |
 | `ArticleStatsService#drainDailyViews(date)` | M2 → M7 | `DailyViews {articleViews, internal, external}` | 看板日阅读回填 | 读后即删，重复调用为空 |
 | `ArticleCounterService#increment/#decrement` | M3 → M2 | articleId、`CounterType`（`LIKE/FAVORITE/COMMENT`）、delta | 文章三计数同事务维护 | 原子 UPDATE；0 行=已到目标态 |
 
@@ -399,7 +408,7 @@ AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id=a.id AND at.tag_id
 
 - `ArticleQueryService` 的 9 个只读方法与 `ArticleCounterService` 的 2 个计数方法，是 M2 对其他模块开放的全部同步能力，不得新增未登记方法；其他交叉查询一律走事件。
 - 事件一律 `@TransactionalEventListener(AFTER_COMMIT)`；监听器异常不影响主事务。
-- 软删文章发 `ArticleDeletedEvent`，M4 按 `article_delete:{articleId}` 反转一次发布奖励；恢复不重新发奖励；彻底删除不额外发事件。
+- **purge** 文章发 `ArticleDeletedEvent`，M4 按原流水收款人反转发布奖励；软删/恢复不反转也不补发（D13）；治理动作另发 `ArticleModeratedEvent` 供 M3 通知作者。
 - **M2 不写 `article_daily_stats`（也不写 `daily_stats`）**：只维护 `articles` 累计列与 §9 的两个 Redis 日计数器；日统计由 M7 经 `ArticleStatsService#drainDailyViews(date)` 聚合后落库（M7 §6.4/§6.5）。
 - M7 统计口径：文章发布数取 `articles.published_at` 落在统计日的行（排除软删）；阅读日增量取 §9 的两个 Redis 日计数器，经 `drainDailyViews` 聚合，不直接对 `view_count` 求差。
 
@@ -419,10 +428,10 @@ AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id=a.id AND at.tag_id
 
 | # | 事项 | 默认方案 | 状态 |
 |---|---|---|---|
-| 1 | 写接口门禁为 EDITOR，`/me/articles` 对 USER 开放 | 创建/编辑/发布仅 EDITOR（含 ADMIN）；USER 只能 `GET /me/articles` 看自己的（通常为空），无“USER 作者”路径 | 已解决 |
+| 1 | 写接口门禁为 EDITOR，`/me/articles` 对 USER 开放 | 创建文章 EDITOR/ADMIN；编辑/发布/下架/删除/回滚仅作者本人；ADMIN 改他人正文先接管；USER 只能 `GET /me/articles` 看自己的（通常为空） | 已解决（v1.6） |
 | 2 | 图片引用用 object_key 还是完整 URL | Markdown 统一相对路径 `/media/{objectKey}`；提取时识别 `/media/` 前缀；渲染时拼公开前缀 | 已解决 |
-| 3 | M5 按 key 还是 fileId claim | `FileAppService#claimByKey(objectKey, ownerId, bizType)` / `#releaseByKey(objectKey)`；不再需要 `findIdByObjectKey` | 已解决 |
-| 4 | `ArticleDeletedEvent` 在软删还是 purge 时发 | 软删即发（M4 反转一次）；恢复不重新发奖励；purge 不额外发 | 已解决 |
+| 3 | M5 按 key 还是 fileId claim | `FileAppService#claimByKey(objectKey, ownerId, actor, bizType)` / `#claimRecordedByKey(objectKey, bizType)` / `#releaseByKey(objectKey)`；不再需要 `findIdByObjectKey` | 已解决 |
+| 4 | `ArticleDeletedEvent` 在软删还是 purge 时发 | **purge 才发**（M4 反转一次，按原收款人）；软删/恢复不反转也不补发（D13） | 已解决（v1.6） |
 | 5 | PRIVATE/UNLISTED 发布是否发积分 | 已解决：仅 `visibility=PUBLIC` 首发发 `ArticlePublishedEvent`；改可见性或 PRIVATE/UNLISTED 不补发，M4 以 `publish:{articleId}` 幂等 | 已解决 |
 | 6 | M7 如何得到日阅读增量 | M2 写 `content:views:{yyyyMMdd}` 与 `content:views:source:{yyyyMMdd}`（TTL 25h），M7 经 `ArticleStatsService#drainDailyViews(date)` 读取并清空 | 已解决 |
 | 7 | 清洗白名单与 TOC 锚点 | `id` 仅允许 `h1~h6`，值匹配 `^[a-z0-9-]+$`；其余标签剥离 | 已解决 |

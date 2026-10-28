@@ -39,12 +39,12 @@
 | GET | `/guestbook` | PUBLIC | 公开留言列表（仅 APPROVED），游标分页 |
 | POST | `/guestbook` | OPTIONAL | 发表留言；201 |
 | DELETE | `/guestbook/{id}` | OWNER | 软删本人留言 |
-| GET | `/admin/comments` | EDITOR | 审核列表，可按 `status` 过滤 |
-| PUT | `/admin/comments/{id}/status` | EDITOR | 审核/下架/恢复 |
-| DELETE | `/admin/comments/{id}` | EDITOR | 管理端软删任意评论 |
-| GET | `/admin/guestbook` | EDITOR | 留言审核列表 |
-| PUT | `/admin/guestbook/{id}/status` | EDITOR | 留言审核/下架/恢复 |
-| DELETE | `/admin/guestbook/{id}` | EDITOR | 管理端软删留言 |
+| GET | `/admin/comments` | EDITOR（仅自己文章，必须带 articleId）/ADMIN | 审核列表，可按 `status` 过滤 |
+| PUT | `/admin/comments/{id}/status` | EDITOR（仅自己文章，不能自审）/ADMIN | 审核/下架/恢复 |
+| DELETE | `/admin/comments/{id}` | EDITOR（仅自己文章，不能自审）/ADMIN | 管理端软删评论 |
+| GET | `/admin/guestbook` | ADMIN | 留言审核列表 |
+| PUT | `/admin/guestbook/{id}/status` | ADMIN | 留言审核/下架/恢复 |
+| DELETE | `/admin/guestbook/{id}` | ADMIN | 管理端软删留言 |
 | GET | `/notifications` | USER | 通知列表（偏移分页） |
 | GET | `/notifications/unread-count` | USER | 未读数（Redis 优先） |
 | POST | `/notifications/read` | USER | 批量标记已读（1~100 个 id） |
@@ -139,13 +139,13 @@ PENDING ──approve──► APPROVED ──hide──► HIDDEN
 | 当前 | 允许目标 | 触发者 | 副作用（同事务/提交后） |
 |---|---|---|---|
 | `PENDING` | `APPROVED` / `REJECTED` | EDITOR | →APPROVED：`ArticleCounterService#increment(COMMENT,+1)`；提交后事件+通知 |
-| `APPROVED` | `HIDDEN` | EDITOR | `#decrement(COMMENT,1)`；`CommentRemovedEvent` |
-| `REJECTED` / `HIDDEN` | `APPROVED` | EDITOR | `#increment(COMMENT,+1)`；`CommentApprovedEvent` |
-| 任意（未删除） | 同状态 | EDITOR | 幂等 200，无副作用、无事件 |
+| `APPROVED` | `HIDDEN` | 作者/ADMIN | `#decrement(COMMENT,1)`；**不发 `CommentRemovedEvent`（D13：隐藏不反转积分）** |
+| `REJECTED` / `HIDDEN` | `APPROVED` | 作者/ADMIN | `#increment(COMMENT,+1)`；`CommentApprovedEvent` 仍发，但幂等键已用过，不重复发分/通知 |
+| 任意（未删除） | 同状态 | 作者/ADMIN | 幂等 200，无副作用、无事件 |
 | 其他组合 | — | — | 409 `COMMENT_STATUS_INVALID` |
 | `deleted_at≠NULL` | — | — | 404 |
 
-- 仅 `APPROVED` 对公众可见；本人可在列表看到自己的 `PENDING`（含 `status` 字段）。
+- 仅 `APPROVED` 对公众可见；本人可在列表看到自己的 `PENDING` 根评论和回复（含 `status` 字段；v1.6 修复了回复不可见的缺口）。
 - 创建状态：敏感词命中 → 强制 `PENDING`；否则 `comment.audit_enabled=true` → `PENDING`，`false` → `APPROVED`。
 - 回复仅允许挂在 `APPROVED` 且未删除的评论上；父评论被拒/待审时不能回复。
 - `remark` 无落库列，仅写入 `audit_logs`（`COMMENT_STATUS`/`GUESTBOOK_STATUS`，含 from/to/remark）。
@@ -156,11 +156,11 @@ PENDING ──approve──► APPROVED ──hide──► HIDDEN
 
 | 动作 | 路由 | 角色 | 结果 |
 |---|---|---|---|
-| 通过 | `PUT /admin/comments/{id}/status` | EDITOR | `APPROVED` + 计数 + 事件 + 作者通知 |
-| 拒绝 | 同上 | EDITOR | `REJECTED`，不计数，不通知 |
-| 下架 | 同上 | EDITOR | `APPROVED→HIDDEN`，计数回退 + 反向事件 |
-| 恢复 | 同上 | EDITOR | `HIDDEN/REJECTED→APPROVED`，重新计数与事件 |
-| 管理删除 | `DELETE /admin/comments/{id}` | EDITOR | 软删 + 计数回退 + 反向事件 |
+| 通过 | `PUT /admin/comments/{id}/status` | 文章作者/ADMIN | `APPROVED` + 计数 + 事件 + 作者通知 |
+| 拒绝 | 同上 | 文章作者/ADMIN | `REJECTED`，不计数，不通知 |
+| 下架 | 同上 | 文章作者/ADMIN | `APPROVED→HIDDEN`，计数回退；**不发反向事件** |
+| 恢复 | 同上 | 文章作者/ADMIN | `HIDDEN/REJECTED→APPROVED`，重新计数；事件幂等，不重复发分 |
+| 管理删除 | `DELETE /admin/comments/{id}` | 文章作者/ADMIN | 软删 + 计数回退 + 反向事件（删除是终态） |
 
 > 条件更新 `WHERE id=? AND status=:from AND deleted_at IS NULL`，影响行数 0 → 重新读状态：已同目标值返回幂等 200，否则 409。
 
@@ -193,11 +193,15 @@ PENDING ──approve──► APPROVED ──hide──► HIDDEN
 |---|---|---|
 | `articles.like_count` | PUT/DELETE like | 同事务调 M2 `ArticleCounterService#increment/decrement`（单条原子 UPDATE） |
 | `articles.favorite_count` | PUT/DELETE favorite | 同上 |
-| `articles.comment_count` | 创建即 APPROVED、审核通过/恢复、下架/拒绝已过审、删除已过审 | 同上，仅状态真正变化时调用，`CounterType=COMMENT` |
+| `articles.comment_count` | 创建即 APPROVED；审核通过/下架/拒绝、软删后按公开树可见数回算 | 同事务调 M2 `ArticleCounterService`，创建 APPROVED 原子 +1；审核/删除后按 `countVisibleByArticle` 差值收敛 |
 | `comments.like_count` | 评论点赞/取消 | 同事务原子增减（`comments` 属本模块） |
 
+- `comment_count` 口径 = **公开列表可见评论**：根评论 `APPROVED` 且未删；子评论 `APPROVED` 且未删，并且根评论同文章、`APPROVED`。根评论软删时自身不计，但已过审子回复仍计（列表保留删除占位）；`PENDING/HIDDEN/REJECTED` 根下的子回复不计。
+- 子回复审核为 `APPROVED` 时必须校验根评论同文章且 `APPROVED`，禁止制造「计数有、列表无」的不可见已过审回复。
+
 - 永不「先查后写」；文章三计数一律由 M2 端口以单条原子 UPDATE 执行，M3 **不写** `articles` 表、不注入 M2 的 Mapper。递减影响 0 行且预期应变更 → 记 WARN + 对账线索，不抛业务异常（不阻断明细事务）。
-- 每日 03:30（`Asia/Shanghai`）对账任务：按 `article_reactions`/`comments` 明细重算三个文章计数与评论点赞数；对「最近 10 分钟无互动明细写入」的文章（以明细表 `MAX(created_at)` 判定，不读 `articles.updated_at`），先以 `increment(articleId, type, 0)` 读取当前计数，再按差值一次 `increment/decrement` 收敛；差异写 `audit_logs(action='INTERACTION_RECONCILE')`（articleId、字段、原值、重算值）。
+- 每日 03:30（`Asia/Shanghai`）对账任务：按 `article_reactions`/`comments` 明细重算三个文章计数与评论点赞数；评论数按公开树可见口径重算；对「最近 10 分钟无互动明细写入」的文章（以明细表 `MAX(created_at)` 判定，不读 `articles.updated_at`），先以 `increment(articleId, type, 0)` 读取当前计数，再按差值一次 `increment/decrement` 收敛；差异写 `audit_logs(action='INTERACTION_RECONCILE')`（articleId、字段、原值、重算值）。
+- 对账同时检测跨文章 `root_id` 与「根不可见但子回复已过审」的异常，记 WARN + 一条 `INTERACTION_RECONCILE/COMMENT/VISIBILITY` 审计；状态修复留给管理员，不自动改审核结论。
 - 文章删除由 M2 软删，M3 不级联、不清理评论；公开入口因文章不可见而 404。仅 ADMIN `purge` 物理删除时由外键 `CASCADE` 清理互动数据。
 - 对账 SQL 以 `article_reactions`/`comments` 聚合为准，只按差值收敛计数，不重写明细，避免二次漂移。
 
@@ -232,7 +236,7 @@ PENDING ──approve──► APPROVED ──hide──► HIDDEN
 
 - `notifications.dedupe_key` 为唯一索引（`uk_dedupe`），订单/积分通知一律以它去重；`INSERT` 命中唯一冲突即视为已通知，直接跳过。
 - Redis `SET notify:dedupe:{recipientId}:{key} 1 NX EX 2592000` 仅作快路径，最终一致性由 `dedupe_key` 唯一键保证；Redis 不可用时退化为直接依赖唯一键。
-- `SYSTEM` 由运营预留，M3 不产生；`ORDER_COMPLETED` 正常发通知（不再静默）。
+- `SYSTEM` 现在由 M3 用于文章治理通知（`ArticleModeratedEvent`：SOFT_DELETE/RESTORE/PURGE/TAKEOVER，link_type=ARTICLE，dedupe `article_moderated:{articleId}:{action}:{version}`）；未新增 NotificationType，0 迁移。`ORDER_COMPLETED` 正常发通知（不再静默）。
 - 写入时机：监听器 `@TransactionalEventListener(AFTER_COMMIT, fallbackExecution=true)`；失败只记日志，不影响主事务。
 - 内容模板（≤150/≤500）：标题含动作与对象，正文附内容摘要 100 字；不拼接用户 HTML。
 
@@ -321,7 +325,7 @@ M4 commit → OrderStatusChangedEvent → M3 AFTER_COMMIT → 去重 SETNX
 | 看留言 | PUBLIC | 仅 APPROVED |
 | 发评论/留言 | OPTIONAL | 游客受 `comment.guest_enabled`；登录用户校验 ACTIVE |
 | 删评论/留言 | OWNER | `user_id` 等于当前用户；ADMIN 可越过；游客内容仅管理端可删 |
-| 审核/管理删 | EDITOR | 不校验归属，全部写审计 |
+| 审核/管理删 | EDITOR（仅自己文章，不能自审）/ADMIN | EDITOR 必须是文章作者且评论不是自己写的；ADMIN 不限；全部写审计 |
 | 点赞/收藏/评论点赞 | USER | 游客 401；文章须可交互 |
 | 我的列表/通知/SSE | USER | 仅本人数据，忽略他人 id |
 
@@ -359,9 +363,9 @@ M4 commit → OrderStatusChangedEvent → M3 AFTER_COMMIT → 去重 SETNX
 | TC-M3-011 | — | guestNickname 1 / 30 / 31 码点 | 1、30 成功；31 返回 400 |
 | TC-M3-012 | 同一用户 | 10s 内连发 2 条 | 第 2 条 429，带 `Retry-After` |
 | TC-M3-013 | 当日已 50 条 | 再发 1 条 | 429 |
-| TC-M3-014 | 用户 A 评论 | 用户 B 调 OWNER 删除 | 403；EDITOR 走 `/admin/comments/{id}` 成功 |
-| TC-M3-015 | PENDING 评论 | EDITOR 通过 | `APPROVED`；计数 +1；发事件；作者收 `COMMENT_APPROVED`；审计含 remark |
-| TC-M3-016 | APPROVED 评论 | EDITOR 下架 | `HIDDEN`；计数 -1；发 `CommentRemovedEvent` |
+| TC-M3-014 | 用户 A 评论 | 用户 B 调 OWNER 删除 | 403；文章作者或 ADMIN 走 `/admin/comments/{id}` 成功 |
+| TC-M3-015 | PENDING 评论 | 文章作者通过 | `APPROVED`；计数 +1；发事件；作者收 `COMMENT_APPROVED`；审计含 remark；审自己的评论 403 |
+| TC-M3-016 | APPROVED 评论 | 文章作者下架 | `HIDDEN`；计数 -1；**不发 `CommentRemovedEvent`，积分不反转**（D13） |
 | TC-M3-017 | APPROVED 评论 | 直接改 PENDING；并发两次通过 | 前者 409；后者仅一次生效，计数只 +1 |
 | TC-M3-018 | — | 连续 PUT like 10 次 | 仅 1 行明细；`like_count+1`；响应均 200 active=true |
 | TC-M3-019 | — | 100 并发 PUT like（同用户同文章） | 唯一键冲突被吞；最终 1 行、计数 +1 |
@@ -400,7 +404,8 @@ M4 commit → OrderStatusChangedEvent → M3 AFTER_COMMIT → 去重 SETNX
 | 事件/调用 | 方向 | 载荷 | 消费方 | 幂等 |
 |---|---|---|---|---|
 | `CommentApprovedEvent` | 发布 | commentId, articleId, commenterId, articleTitle | M4 | `comment_approved:{commentId}` |
-| `CommentRemovedEvent` | 发布 | commentId, articleId, commenterId | M4 | `comment_removed:{commentId}` |
+| `CommentRemovedEvent` | 发布 | commentId, articleId, commenterId | M4（删除时） | `comment_removed:{commentId}` |
+| `ArticleModeratedEvent` | 订阅（M2） | articleId, authorId, moderatorId, action, reason, version | M3 生成 SYSTEM 通知 | `article_moderated:{articleId}:{action}:{version}` |
 | `ReactionToggledEvent` | 发布（仅 LIKE） | articleId, authorId, actorId, type, active | M4 | `like:{articleId}:{actorId}` / `unlike:...` |
 | `OrderStatusChangedEvent` | 订阅 | orderId, orderNo, userId, fromStatus, toStatus | M3 | `order:{orderNo}:{toStatus}` |
 | `PointsAdjustedEvent` | 订阅 | ledgerId, userId, amount, balanceAfter, reason | M3 | `points:{ledgerId}` |

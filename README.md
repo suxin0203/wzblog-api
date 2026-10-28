@@ -6,7 +6,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-一个**功能完整、经过并发与安全验证**的模块化单体博客后端：Markdown 内容、双 Token 认证、评论互动、不可变积分账本、媒体管理、AI 站内助手（SSE 流式 + 工具调用）、微信小程序扫码登录（含已上线小程序零改动兼容层）、运营看板——所有能力均有集成测试背书，跑在真实 MySQL/Redis 容器上。
+一个**功能完整、经过并发与安全验证**的模块化单体博客后端：单人技术博客 + 受邀作者 + 读者社区 + 积分权益。内容主权归作者（EDITOR 只能编辑自己的文章、审自己文章下的评论），平台主权归站主（ADMIN 负责治理与履约，改他人正文需先“接管”）；Markdown 内容、双 Token 认证、不可变积分账本（反转按原收款人）、媒体引用计数、AI 站内助手（SSE + 工具调用）、运营看板——所有能力均有集成测试背书，跑在真实 MySQL/Redis 容器上。
 
 ```bash
 docker compose up -d mysql redis && ./scripts/run.sh   # → http://localhost:8021/swagger-ui.html
@@ -19,15 +19,15 @@ docker compose up -d mysql redis && ./scripts/run.sh   # → http://localhost:80
 | 模块 | 能力 |
 |---|---|
 | **认证 (identity)** | 双 Token 轮换 + 家族复用检测、失败锁定、登录审计、找回密码、微信 openid 身份（自动建号/绑定/迁移） |
-| **内容 (content)** | Markdown 单一事实源（渲染/白名单清洗/TOC/阅读时长为派生列）、草稿-发布-回收站状态机、修订回滚、ngram 全文检索、游标分页、版本键缓存 |
-| **互动 (interaction)** | 两级评论树（父删子留）、Aho-Corasick 敏感词（NFKC 归一 + 原文打星）、审核状态机、幂等点赞收藏、留言板、通知（dedupe 去重 + SSE 实时推送 + 断线续传）、计数对账 |
-| **积分 (points)** | **不可变账本**（行锁串行 + 幂等键 + 锁内日上限 + 反转不透余额）、六类事件发放、下单六步事务（条件扣库存防超卖）、订单状态机 + 退款回补、称号、管理员调分审计、对账修复 |
+| **内容 (content)** | Markdown 单一事实源（渲染/白名单清洗/TOC/阅读时长为派生列）、草稿-发布-回收站状态机、**作者归属校验**（非作者写公开文章 403/隐藏 404）、**站主接管 takeover**、软删/隐藏不释放引用不反转积分（可逆状态无副作用）、修订回滚、ngram 全文检索、游标分页、版本键缓存 |
+| **互动 (interaction)** | 两级评论树（父删子留）、Aho-Corasick 敏感词（NFKC 归一 + 原文打星）、审核状态机、**作者审自己文章评论（不能自审）、留言板归站主**、幂等点赞收藏（自赞不计分）、治理通知（SYSTEM）、通知 dedupe + SSE 断线续传、计数对账 |
+| **积分 (points)** | **不可变账本**（行锁串行 + 幂等键 + 锁内日上限 + 反转不透余额）、**反转按原流水收款人（接管不错账）**、软删/隐藏不反转（D13）、下单六步事务（条件扣库存防超卖）、订单状态机 + 退款回补、称号、管理员调分审计、对账修复 |
 | **媒体 (media)** | 预签名直传（本地 HMAC 能力 URL / 预留 MinIO 双 adapter）、魔数 + 解压炸弹防护、EXIF 方向修正、异步缩略图、sha256 去重（同上传者域）、引用计数、孤儿清理任务 |
 | **AI (ai)** | SSE 流式对话（session→tool→delta→done 协议）、6 个只读工具白名单、三层配额（分钟/日/并发 Lua 原子）、游客会话令牌、摘要/标签建议、Mock/OpenAI 双上游 |
 | **微信 (wechat)** | 小程序扫码登录状态机（PENDING→CONFIRMED→COMPLETED）、bindToken 一次性、**已上线小程序零改动兼容层**（旧协议壳 + 新安全内核） |
 | **运营 (admin)** | 配置白名单 CRUD（JSON 列对称编解码）、轮播/友链、看板 6 接口（实时 + 预聚合）、审计日志、日统计任务 |
 
-**105 个集成测试** · Testcontainers 真库 · ArchUnit 架构守护 · 覆盖率门禁 ≥70%（实测 79%+）
+**121 个集成测试** · Testcontainers 真库 · ArchUnit 架构守护 · 覆盖率门禁 ≥70%（实测 79%+）
 
 ## 🏗️ 架构
 
@@ -73,7 +73,7 @@ curl http://localhost:8021/api/v1/ping
 **测试**（Testcontainers 起真实容器，非内存库）：
 
 ```bash
-./scripts/mvn.sh verify            # 105 集成测试 + ArchUnit + 覆盖率门禁
+./scripts/mvn.sh verify            # 110 集成测试 + ArchUnit + 覆盖率门禁
 # 覆盖率报告 → target/site/jacoco/index.html
 ```
 
@@ -96,6 +96,18 @@ curl http://localhost:8021/api/v1/ping
 - **断言打到库**：HTTP 200 不够，ref_count、流水条数、审计行都要对
 - **并发真实打**：20 线程抢 1 库存、并发同幂等键、并发刷新轮换
 - **架构也测**：ArchUnit 4 规则曾在开发中真实拦截两次跨模块泄漏
+
+## 📚 接口与对接入口
+
+| 入口 | 位置 |
+|---|---|
+| 接口契约总表 | [docs/04-接口契约.md](docs/04-接口契约.md)：路由、权限、幂等、分页/游标、SSE、错误码 |
+| 业务逻辑与角色 | [docs/14-业务逻辑与角色定义.md](docs/14-业务逻辑与角色定义.md)：A 方案口径、角色职责、七条业务闭环、规则与不变量 |
+| 字段级 DTO | [docs/modules/](docs/modules/)：M1~M8 各模块 §4 |
+| 在线调试 | 启动后访问 `http://localhost:8021/swagger-ui.html`（右上角 Authorize 填 accessToken） |
+| OpenAPI JSON | `http://localhost:8021/v3/api-docs` |
+| 小程序旧协议 | [docs/13-微信扫码复原计划.md](docs/13-微信扫码复原计划.md)（`/wechat/*`、`/qr-login/*`、`/miniapp/*`、`/users/*`） |
+| Web 前端 API 层 | 同级项目 `wzblog-frontend/src/api/`（axios 封装在 `src/utils/request.ts`） |
 
 ## 📁 目录导览
 

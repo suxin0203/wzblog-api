@@ -14,7 +14,7 @@
 | 分层 | `api`（AuthController、UserController、AdminUserController）/ `app`（AuthAppService、UserAppService、AdminUserAppService、SessionAppService）/ `domain`（User、RefreshToken、VerificationCode、LoginAudit、枚举、UserLoggedInEvent）/ `infra`（Mapper、Redis） |
 | 表 | `users`、`refresh_tokens`、`verification_codes`、`login_audits` |
 | 对外事件 | 发布：`UserLoggedInEvent`；订阅：无 |
-| 依赖的 app 服务 | M0：`Result/ErrorCode`、Security 过滤器、`RequestContext`、`RateLimiter`、`MailSender`、Redis、`shared.profile.TitleLookup`（端口，M4 实现）；M5：`FileAppService#claimByKey(objectKey, ownerId, bizType)` / `#releaseByKey(objectKey)`（头像，入参对象 key，非 fileId） |
+| 依赖的 app 服务 | M0：`Result/ErrorCode`、Security 过滤器、`RequestContext`、`RateLimiter`、`MailSender`、Redis、`shared.profile.TitleLookup`（端口，M4 实现）；M5：`FileAppService#claimByKey(objectKey, ownerId, actor, bizType)` / `#releaseByKey(objectKey)`（头像，入参对象 key，非 fileId） |
 | 路由数 | 21（与 00 第 4 节逐字一致，不得增删） |
 | 阶段 | 1 |
 
@@ -63,7 +63,7 @@
 | ForgotRequest | email:string 必填 | 合法邮箱 ≤150，入库小写 |
 | ForgotVerifyRequest | email:string 必填；code:string 必填 | 6 位数字 `^\d{6}$` |
 | ForgotResetRequest | resetToken:string 必填；newPassword:string 必填 | token 43 位 Base64URL；密码规则同注册 |
-| UpdateProfileRequest | nickname:string 必填；bio:string 选填；avatarKey:string 选填 | 昵称 1~30；bio ≤255；`avatarKey` 为 M5 对象 key（≤255），传 null 表示清除头像，服务端调 `FileAppService#claimByKey(avatarKey, userId, AVATAR)` / `#releaseByKey(旧 avatarKey)`；username/email/role/status 不在白名单 |
+| UpdateProfileRequest | nickname:string 必填；bio:string 选填；avatarKey:string 选填 | 昵称 1~30；bio ≤255；`avatarKey` 为 M5 对象 key（≤255），传 null 表示清除头像，服务端调 `FileAppService#claimByKey(avatarKey, userId, currentUser, AVATAR)` / `#releaseByKey(旧 avatarKey)`；username/email/role/status 不在白名单 |
 | ChangePasswordRequest | oldPassword:string 必填；newPassword:string 必填 | 新密码 8~64、可见 ASCII 且字母+数字，且不得与旧密码相同 |
 | AdminCreateUserRequest | username、password、nickname 必填；email、role、status 选填 | role 缺省 `USER`，status 缺省 `ACTIVE`；username/密码/昵称/邮箱规则同上 |
 | AdminUpdateUserRequest | nickname、role、status 必填；email、newPassword 选填 | 不含 username；email 规则同注册；newPassword 存在时重置密码并吊销全部 family；不能改自己 role/status |
@@ -119,7 +119,7 @@
 
 - `users` **没有** `points`、`is_root`、`refresh_token`：积分在 M4 `points_accounts`，权限只看 `role`，刷新令牌独立成表。
 - 注销不物理删除：`username=deleted_{id}`、`email=deleted_{id}@deleted.invalid`、`openid=deleted_{id}`，同时 `unionid=NULL`、`nickname='已注销用户'`、`avatar_key=NULL`、`bio=NULL`、`password_hash=随机BCrypt`、`status='DISABLED'`、`deleted_at=NOW(3)`，释放三个唯一键。
-- `avatarUrl` 由配置的公共读域名 + `avatar_key` 拼接；M1 只存 key，不签发临时 URL。头像引用的占用/释放统一调 M5 `FileAppService#claimByKey(objectKey, ownerId, AVATAR)` / `#releaseByKey(objectKey)`，不再使用 `claim(fileId)`。
+- `avatarUrl` 由配置的公共读域名 + `avatar_key` 拼接；M1 只存 key，不签发临时 URL。头像引用的占用/释放统一调 M5 `FileAppService#claimByKey(objectKey, ownerId, actor, AVATAR)` / `#releaseByKey(objectKey)`，不再使用 `claim(fileId)`。
 - 昵称：`users.nickname` 为 `VARCHAR(50)`（DB 余量），API 校验 1~30 字符；两者不可混写。
 - 注册保留 `deleted_` 用户名前缀与 `deleted.invalid` 邮箱域，保证注销匿名化不会与真实账号唯一键冲突。
 
@@ -379,7 +379,7 @@ WHERE id = :id AND consumed_at IS NULL AND expires_at > NOW(3);
 | `WechatIdentityService#loginOrCreateByWechat` | M8 → M1 | `WechatLoginResult loginOrCreateByWechat(String openid, String unionid, String nickname, String avatarKey)` → `{userId, status, created}`；处理停用/注销/`uk_openid` 并发 | M8 小程序 code 登录 | `uk_openid` 冲突回查后按登录处理 |
 | `WechatIdentityService#registerAndBindWechat` | M8 → M1 | `Long registerAndBindWechat(String username, String password, String nickname, String openid, String unionid)`；创建 `source=QR` 的正式账号、绑定 openid、同事务匿名化同 openid 的自动账号 | M8 扫码注册并确认 | `uk_username`/`uk_openid`/`uk_unionid` |
 | `WechatIdentityService#bindWechat` | M8 → M1 | `BindResult bindWechat(Long userId, String openid, String unionid)`；仅当前用户 `openid IS NULL` 可绑；冲突/已绑他人/换绑返回对应错误 | M8 扫码绑定并确认 | 重复绑同一 openid 幂等 |
-| `FileAppService#claimByKey/#releaseByKey` | M1 → M5 | `String claimByKey(String objectKey, Long ownerId, FileBizType bizType)`、`void releaseByKey(String objectKey)` | 头像占用/释放（入参对象 key） | 同一 key 幂等 |
+| `FileAppService#claimByKey/#releaseByKey` | M1 → M5 | `void claimByKey(String objectKey, Long ownerId, CurrentUser actor, FileBizType bizType)`、`void releaseByKey(String objectKey)` | 头像占用/释放（入参对象 key；owner 与 actor 均为本人） | 调用方先 claim 新、再 release 旧 |
 | `shared.profile.TitleLookup#findById` / `#findByIds` | M1 → M0 端口（M4 实现） | `TitleBrief findById(Long)` / `List<TitleBrief> findByIds(Collection<Long>)` → `{id,name,cssClass}` | 本人/公开资料的 activeTitle | 只读，缺失返回 null |
 | `UserDetailsService#loadUserByUsername` | M0 → M1（接口） | 以 userId 字符串回库，返回 authorities + status | 每请求鉴权 | 只读 |
 
@@ -398,7 +398,7 @@ WHERE id = :id AND consumed_at IS NULL AND expires_at > NOW(3);
 | 登录失败 HTTP | 422 `AUTH_BAD_CREDENTIALS`（锁定 429、停用 403），避免前端 401 拦截器误跳登录页 | 已登记（04 §7.3） |
 | resetToken 存储位置 | Redis：`auth:reset:{sha256(token)}` → userId，TTL 300s（5 分钟）、`GETDEL` 一次性；**不新增表**、DB 不落任何重置令牌 | 已解决 |
 | 错误码登记 | 第 10 节清单已逐条登记到 04 §7.3，不新增前缀 | 已完成 |
-| 头像 claim 接口 | 统一 `FileAppService#claimByKey(objectKey, ownerId, AVATAR)` / `#releaseByKey(objectKey)`；入参为对象 key，不再用 `claim(fileId)` | 已解决 |
+| 头像 claim 接口 | 统一 `FileAppService#claimByKey(objectKey, ownerId, actor, AVATAR)` / `#releaseByKey(objectKey)`；入参为对象 key，不再用 `claim(fileId)` | 已解决 |
 | refresh family 绝对有效期 | 滑动 14 天，不设绝对上限；如需上限在 V3 增加 family 过期字段 | 仍待产品确认 |
 | 旧 refresh 复用与宽限 | 20 并发只发生 1 次真实轮换，其余在 10 秒宽限内返回同一新 Token；窗口外或不同 UA 一律吊销 family | 已解决 |
 | 登录事件发布时机 | 仅每日首次登录发布 `firstLoginOfDay=true`；其余登录不发事件 | 已解决 |
