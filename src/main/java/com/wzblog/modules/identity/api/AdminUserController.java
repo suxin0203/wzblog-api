@@ -11,7 +11,6 @@ import com.wzblog.modules.identity.api.vo.LoginAuditVO;
 import com.wzblog.modules.identity.app.AdminUserAppService;
 import com.wzblog.modules.identity.domain.UserStatus;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -54,7 +53,7 @@ public class AdminUserController {
     @PostMapping
     public ResponseEntity<Result<AdminUserVO>> create(@Valid @RequestBody AdminCreateUserRequest request) {
         AdminUserVO user = adminUserAppService.create(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(Result.ok(user));
+        return ResponseEntity.ok(Result.ok(user));
     }
 
     @GetMapping("/{id}")

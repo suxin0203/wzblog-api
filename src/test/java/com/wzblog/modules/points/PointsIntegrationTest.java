@@ -248,7 +248,7 @@ class PointsIntegrationTest extends IdentityTestSupport {
     @Test
     void concurrentOrdersRaceSingleStockItem() throws Exception {
         HttpResult goods = createGoods(adminToken(), Map.of("stock", 1, "pointsPrice", 10));
-        assertThat(goods.status()).isEqualTo(201);
+        assertThat(goods.status()).isEqualTo(200);
         long goodsId = goods.data().path("id").asLong();
 
         String username = unique("po");
@@ -276,7 +276,7 @@ class PointsIntegrationTest extends IdentityTestSupport {
                 } catch (InterruptedException ignored) {
                 }
                 HttpResult result = order(token, "race-key-" + seq, body);
-                if (result.status() == 201) {
+                if ("OK".equals(result.code()) && result.status() == 200) {
                     created.incrementAndGet();
                 } else if ("GOODS_STOCK_INSUFFICIENT".equals(result.code())) {
                     insufficient.incrementAndGet();
@@ -317,7 +317,7 @@ class PointsIntegrationTest extends IdentityTestSupport {
         awaitBalance(userId, 205); // 200 调分 + 5 每日登录
 
         HttpResult first = order(token, key, body);
-        assertThat(first.status()).isEqualTo(201);
+        assertThat(first.status()).isEqualTo(200);
         String orderNo = first.data().path("orderNo").asText();
         assertThat(orderNo).matches("^PO\\d{14}[A-Z0-9]{8}$").hasSize(24);
 
@@ -454,7 +454,7 @@ class PointsIntegrationTest extends IdentityTestSupport {
     void titleOrderGrantsTitleOnce() {
         HttpResult title = post("/api/v1/admin/titles",
                 Map.of("name", "称号-" + unique("t"), "cssClass", "gold"), adminToken());
-        assertThat(title.status()).isEqualTo(201);
+        assertThat(title.status()).isEqualTo(200);
         long titleId = title.data().path("id").asLong();
 
         java.util.Map<String, Object> titleGoods = new LinkedHashMap<>();
@@ -578,7 +578,7 @@ class PointsIntegrationTest extends IdentityTestSupport {
         HttpResult first = order(token, key, Map.of("goodsId", goodsId, "quantity", 1,
                 "receiverName", "张三", "receiverPhone", "13800138000",
                 "receiverAddress", "北京市海淀区"));
-        assertThat(first.status()).isEqualTo(201);
+        assertThat(first.status()).isEqualTo(200);
 
         // 回归：同 key、同 goodsId、同 quantity、仅换收货地址 → 必须冲突而非静默返回旧订单
         HttpResult replay = order(token, key, Map.of("goodsId", goodsId, "quantity", 1,

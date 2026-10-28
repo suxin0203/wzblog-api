@@ -32,7 +32,7 @@ class CommentRateLimitTest extends IdentityTestSupport {
         body.put("title", unique("rl"));
         body.put("contentMd", "# t\n\nbody");
         HttpResult created = post("/api/v1/articles", body, token);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         long article = created.data().path("id").asLong();
         assertThat(post("/api/v1/articles/" + article + "/publish", Map.of(), token)
                 .status()).isEqualTo(200);
@@ -40,7 +40,7 @@ class CommentRateLimitTest extends IdentityTestSupport {
         Map<String, Object> comment = new LinkedHashMap<>();
         comment.put("content", "第一条");
         assertThat(post("/api/v1/articles/" + article + "/comments", comment, token)
-                .status()).isEqualTo(201);
+                .status()).isEqualTo(200);
 
         comment.put("content", "第二条");
         HttpResult second = post("/api/v1/articles/" + article + "/comments", comment, token);

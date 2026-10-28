@@ -1,6 +1,7 @@
 package com.wzblog.modules.points.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.points.api.dto.OrderCreateRequest;
@@ -38,8 +39,8 @@ public class PointsOrderController {
             @RequestParam(value = "status", required = false) OrderStatus status,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        return ResponseEntity.ok(Result.ok(orderAppService.myList(user, status, Math.max(1, page),
-                Math.min(Math.max(1, pageSize), 100))));
+        return ResponseEntity.ok(Result.ok(orderAppService.myList(user, status, PageParams.requirePage(page),
+                PageParams.requirePageSize(pageSize))));
     }
 
     @GetMapping("/{orderNo}")
@@ -54,7 +55,7 @@ public class PointsOrderController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody OrderCreateRequest request) {
         var result = orderAppService.create(user, idempotencyKey, request);
-        return ResponseEntity.status(result.fresh() ? 201 : 200).body(Result.ok(result.order()));
+        return ResponseEntity.ok(Result.ok(result.order()));
     }
 
     @PostMapping("/{orderNo}/cancel")

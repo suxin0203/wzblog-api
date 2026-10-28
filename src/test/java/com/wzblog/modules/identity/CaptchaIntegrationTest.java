@@ -63,7 +63,7 @@ class CaptchaIntegrationTest extends IdentityTestSupport {
 
         String username = unique("cps");
         HttpResult result = registerWithCaptcha(username, code.toLowerCase(), captchaId);
-        assertThat(result.status()).isEqualTo(201);
+        assertThat(result.status()).isEqualTo(200);
         assertThat(result.data().path("username").asText()).isEqualTo(username);
         assertThat(redis.hasKey(key)).isFalse();
     }

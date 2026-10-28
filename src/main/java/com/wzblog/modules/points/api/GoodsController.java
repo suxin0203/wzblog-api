@@ -1,6 +1,7 @@
 package com.wzblog.modules.points.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.modules.points.api.vo.GoodsVO;
 import com.wzblog.modules.points.app.GoodsAppService;
@@ -28,8 +29,8 @@ public class GoodsController {
     public ResponseEntity<Result<PageResult<GoodsVO>>> list(
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        return ResponseEntity.ok(Result.ok(goodsAppService.publicList(Math.max(1, page),
-                Math.min(Math.max(1, pageSize), 100))));
+        return ResponseEntity.ok(Result.ok(goodsAppService.publicList(PageParams.requirePage(page),
+                PageParams.requirePageSize(pageSize))));
     }
 
     @GetMapping("/{id}")

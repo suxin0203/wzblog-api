@@ -1,6 +1,7 @@
 package com.wzblog.modules.admin.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.common.util.Times;
 import com.wzblog.common.web.CurrentUser;
@@ -75,8 +76,8 @@ public class OperationsController {
     public ResponseEntity<Result<PageResult<Map<String, Object>>>> adminBanners(
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        List<Banner> banners = operationsAppService.adminBanners(Math.max(1, page),
-                Math.min(Math.max(1, pageSize), 100));
+        List<Banner> banners = operationsAppService.adminBanners(PageParams.requirePage(page),
+                PageParams.requirePageSize(pageSize));
         return ResponseEntity.ok(Result.ok(new PageResult<>(
                 banners.stream().map(this::bannerVo).toList(), banners.size(), page, pageSize,
                 false)));
@@ -86,7 +87,7 @@ public class OperationsController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Result<Map<String, Object>>> createBanner(
             @AuthenticationPrincipal CurrentUser admin, @RequestBody Banner banner) {
-        return ResponseEntity.status(201).body(Result.ok(
+        return ResponseEntity.ok(Result.ok(
                 bannerVo(operationsAppService.createBanner(admin, banner))));
     }
 
@@ -114,8 +115,8 @@ public class OperationsController {
     public ResponseEntity<Result<PageResult<Map<String, Object>>>> adminFriendLinks(
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        List<FriendLink> links = operationsAppService.adminFriendLinks(Math.max(1, page),
-                Math.min(Math.max(1, pageSize), 100));
+        List<FriendLink> links = operationsAppService.adminFriendLinks(PageParams.requirePage(page),
+                PageParams.requirePageSize(pageSize));
         return ResponseEntity.ok(Result.ok(new PageResult<>(
                 links.stream().map(this::linkVo).toList(), links.size(), page, pageSize, false)));
     }
@@ -124,7 +125,7 @@ public class OperationsController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Result<Map<String, Object>>> createFriendLink(
             @AuthenticationPrincipal CurrentUser admin, @RequestBody FriendLink link) {
-        return ResponseEntity.status(201).body(Result.ok(
+        return ResponseEntity.ok(Result.ok(
                 linkVo(operationsAppService.createFriendLink(admin, link))));
     }
 

@@ -1,6 +1,7 @@
 package com.wzblog.modules.interaction.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.interaction.api.dto.ModerateRequest;
@@ -49,7 +50,7 @@ public class InteractionAdminController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(Result.ok(commentAppService.adminList(user, status, articleId,
-                Math.max(1, page), clamp(pageSize))));
+                PageParams.requirePage(page), PageParams.requirePageSize(pageSize))));
     }
 
     @PutMapping("/comments/{id}/status")
@@ -77,7 +78,7 @@ public class InteractionAdminController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(Result.ok(
-                guestbookAppService.adminList(status, Math.max(1, page), clamp(pageSize))));
+                guestbookAppService.adminList(status, PageParams.requirePage(page), PageParams.requirePageSize(pageSize))));
     }
 
     @PutMapping("/guestbook/{id}/status")
@@ -107,9 +108,5 @@ public class InteractionAdminController {
             throw new com.wzblog.common.error.BusinessException(
                     com.wzblog.common.error.ErrorCode.COMMON_VALIDATION_ERROR, "status 非法", null);
         }
-    }
-
-    private static int clamp(int pageSize) {
-        return Math.min(Math.max(1, pageSize), 100);
     }
 }

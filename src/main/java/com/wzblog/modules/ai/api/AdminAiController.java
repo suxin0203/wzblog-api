@@ -1,6 +1,7 @@
 package com.wzblog.modules.ai.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.modules.ai.api.vo.AiAdminSessionVO;
 import com.wzblog.modules.ai.api.vo.AiAdminStatsVO;
@@ -43,7 +44,7 @@ public class AdminAiController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(Result.ok(sessionAppService.adminSessions(userId, channel,
-                from, to, Math.max(1, page), Math.min(Math.max(1, pageSize), 100))));
+                from, to, PageParams.requirePage(page), PageParams.requirePageSize(pageSize))));
     }
 
     @GetMapping("/sessions/{sessionId}")

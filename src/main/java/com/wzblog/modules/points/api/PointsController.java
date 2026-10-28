@@ -1,6 +1,7 @@
 package com.wzblog.modules.points.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.points.api.vo.PointsAccountVO;
@@ -40,6 +41,6 @@ public class PointsController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(Result.ok(pointsQueryService.myLedger(user, type,
-                Math.max(1, page), Math.min(Math.max(1, pageSize), 100))));
+                PageParams.requirePage(page), PageParams.requirePageSize(pageSize))));
     }
 }

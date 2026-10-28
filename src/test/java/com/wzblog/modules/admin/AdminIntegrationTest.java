@@ -76,7 +76,7 @@ class AdminIntegrationTest extends IdentityTestSupport {
         banner.put("sortOrder", 1);
         banner.put("status", "ENABLED");
         HttpResult created = post("/api/v1/admin/banners", banner, adminToken());
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         long bannerId = created.data().path("id").asLong();
 
         // 公开列表可见，图片引用计数 +1
@@ -107,7 +107,7 @@ class AdminIntegrationTest extends IdentityTestSupport {
         link.put("sortOrder", 1);
         link.put("status", "ENABLED");
         HttpResult linkCreated = post("/api/v1/admin/friend-links", link, adminToken());
-        assertThat(linkCreated.status()).isEqualTo(201);
+        assertThat(linkCreated.status()).isEqualTo(200);
         HttpResult links = get("/api/v1/friend-links", null);
         assertThat(links.data().size()).isEqualTo(1);
         assertThat(links.data().get(0).path("blogName").asText()).isEqualTo("朋友的博客");

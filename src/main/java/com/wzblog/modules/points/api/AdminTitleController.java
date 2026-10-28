@@ -43,7 +43,7 @@ public class AdminTitleController {
     @PostMapping
     public ResponseEntity<Result<TitleVO>> create(@AuthenticationPrincipal CurrentUser admin,
                                                   @Valid @RequestBody TitleUpsertRequest request) {
-        return ResponseEntity.status(201).body(Result.ok(titleAppService.create(admin, request)));
+        return ResponseEntity.ok(Result.ok(titleAppService.create(admin, request)));
     }
 
     @PutMapping("/{id}")

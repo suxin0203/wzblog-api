@@ -233,7 +233,7 @@ class AiIntegrationTest extends IdentityTestSupport {
         article.put("title", unique("虚拟线程入门"));
         article.put("contentMd", "# 虚拟线程\n\nJava 21 的虚拟线程适合大量阻塞 IO。");
         HttpResult created = post("/api/v1/articles", article, token);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         long articleId = created.data().path("id").asLong();
 
         HttpResult summary = post("/api/v1/articles/" + articleId + "/ai/summary",

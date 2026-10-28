@@ -46,7 +46,7 @@ class ContentIntegrationTest extends IdentityTestSupport {
         String token = adminToken();
         String title = unique("hello");
         HttpResult created = createArticle(token, articleBody(title, "# Hi\n\nMarkdown **body**."));
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         assertThat(created.code()).isEqualTo("OK");
         assertThat(created.data().path("status").asText()).isEqualTo("DRAFT");
         assertThat(created.data().path("version").asInt()).isZero();
@@ -67,14 +67,14 @@ class ContentIntegrationTest extends IdentityTestSupport {
         String token = adminToken();
         String slug = unique("slug");
         HttpResult first = createArticle(token, articleBody(unique("dup"), "body", Map.of("slug", slug)));
-        assertThat(first.status()).isEqualTo(201);
+        assertThat(first.status()).isEqualTo(200);
 
         HttpResult second = createArticle(token, articleBody(unique("dup2"), "body", Map.of("slug", slug)));
         assertThat(second.status()).isEqualTo(409);
         assertThat(second.code()).isEqualTo("ARTICLE_SLUG_CONFLICT");
 
         HttpResult chinese = createArticle(token, articleBody("中文标题", "正文"));
-        assertThat(chinese.status()).isEqualTo(201);
+        assertThat(chinese.status()).isEqualTo(200);
         assertThat(chinese.data().path("slug").asText()).matches("^post-[a-z0-9]{8}$");
     }
 
@@ -100,7 +100,7 @@ class ContentIntegrationTest extends IdentityTestSupport {
                 [link](javascript:alert(1))
                 """;
         HttpResult created = createArticle(token, articleBody(unique("safe"), content));
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         publish(created.data().path("id").asText(), token);
 
         HttpResult detail = get("/api/v1/articles/" + created.data().path("slug").asText(), null);
@@ -124,7 +124,7 @@ class ContentIntegrationTest extends IdentityTestSupport {
                 """, userId("bootstrap_admin"));
         HttpResult local = createArticle(token,
                 articleBody(unique("imgok"), "![x](/media/articles/2026/10/demo.png)"));
-        assertThat(local.status()).isEqualTo(201);
+        assertThat(local.status()).isEqualTo(200);
     }
 
     // ------------------------------------------------------------ 状态与可见性
@@ -168,7 +168,7 @@ class ContentIntegrationTest extends IdentityTestSupport {
 
         HttpResult privateArticle = createArticle(token, articleBody(unique("priv"), "body",
                 Map.of("visibility", "PRIVATE", "categoryId", String.valueOf(categoryId))));
-        assertThat(privateArticle.status()).isEqualTo(201);
+        assertThat(privateArticle.status()).isEqualTo(200);
         long privateId = privateArticle.data().path("id").asLong();
         publish(String.valueOf(privateId), token);
         String privateSlug = privateArticle.data().path("slug").asText();
@@ -661,7 +661,7 @@ class ContentIntegrationTest extends IdentityTestSupport {
 
         HttpResult article = createArticle(token, articleBody(unique("taxart"), "body",
                 Map.of("categoryId", categoryId, "tagIds", List.of(tagId))));
-        assertThat(article.status()).isEqualTo(201);
+        assertThat(article.status()).isEqualTo(200);
         String slug = article.data().path("slug").asText();
         publish(article.data().path("id").asText(), token);
         HttpResult detail = get("/api/v1/articles/" + slug, null);

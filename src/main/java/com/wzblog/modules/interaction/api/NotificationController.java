@@ -1,6 +1,7 @@
 package com.wzblog.modules.interaction.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.interaction.api.dto.NotificationReadRequest;
@@ -39,8 +40,8 @@ public class NotificationController {
             @AuthenticationPrincipal CurrentUser user,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        return ResponseEntity.ok(Result.ok(notificationAppService.list(user, Math.max(1, page),
-                Math.min(Math.max(1, pageSize), 100))));
+        return ResponseEntity.ok(Result.ok(notificationAppService.list(user, PageParams.requirePage(page),
+                PageParams.requirePageSize(pageSize))));
     }
 
     @GetMapping("/unread-count")

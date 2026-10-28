@@ -21,7 +21,6 @@ import com.wzblog.modules.identity.app.CaptchaService;
 import com.wzblog.modules.identity.app.PasswordResetAppService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -59,7 +58,7 @@ public class AuthController {
     public ResponseEntity<Result<UserSelfVO>> register(@Valid @RequestBody RegisterRequest request,
                                                        HttpServletRequest httpRequest) {
         UserSelfVO user = authAppService.register(request, ClientInfo.from(httpRequest));
-        return ResponseEntity.status(HttpStatus.CREATED).body(Result.ok(user));
+        return ResponseEntity.ok(Result.ok(user));
     }
 
     @PostMapping("/login")

@@ -54,7 +54,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     private long createPublishedArticle(String token) {
         String title = unique("art");
         HttpResult created = post("/api/v1/articles", articleBody(title, "# T\n\nbody"), token);
-        assertThat(created.status()).as("create article: %s", created.body()).isEqualTo(201);
+        assertThat(created.status()).as("create article: %s", created.body()).isEqualTo(200);
         long id = created.data().path("id").asLong();
         HttpResult published = post("/api/v1/articles/" + id + "/publish", Map.of(), token);
         assertThat(published.status()).as("publish: %s", published.body()).isEqualTo(200);
@@ -83,7 +83,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         // 审核开启（seed 默认 true）：评论进入 PENDING，匿名不可见，本人可见
         HttpResult created = post("/api/v1/articles/" + article + "/comments",
                 commentBody("好文章！"), adminToken());
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         assertThat(created.data().path("status").asText()).isEqualTo("PENDING");
         long commentId = created.data().path("id").asLong();
 
@@ -106,7 +106,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         // 回复：rootId 指向根，replyToUser 有值
         HttpResult reply = post("/api/v1/articles/" + article + "/comments",
                 Map.of("content", "多谢！", "parentId", String.valueOf(commentId)), adminToken());
-        assertThat(reply.status()).isEqualTo(201);
+        assertThat(reply.status()).isEqualTo(200);
         long replyId = reply.data().path("id").asLong();
         assertThat(reply.data().path("rootId").asText()).isEqualTo(String.valueOf(commentId));
 
@@ -256,7 +256,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     private long approvedComment(long article, String content, String token) {
         HttpResult created = post("/api/v1/articles/" + article + "/comments",
                 commentBody(content), token);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         long id = created.data().path("id").asLong();
         assertThat(put("/api/v1/admin/comments/" + id + "/status",
                 Map.of("status", "APPROVED"), token).status()).isEqualTo(200);
@@ -266,7 +266,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     private long approvedReply(long article, long rootId, String content, String token) {
         HttpResult created = post("/api/v1/articles/" + article + "/comments",
                 Map.of("content", content, "parentId", String.valueOf(rootId)), token);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         long id = created.data().path("id").asLong();
         assertThat(put("/api/v1/admin/comments/" + id + "/status",
                 Map.of("status", "APPROVED"), token).status()).isEqualTo(200);
@@ -286,7 +286,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         // 全角 + 零宽变体仍命中（NFKC 归一后匹配）
         HttpResult created = post("/api/v1/articles/" + article + "/comments",
                 commentBody("这里有\u200B敏\uFEFF感\u200B词​变体"), adminToken());
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         assertThat(created.data().path("status").asText()).isEqualTo("PENDING");
         String content = jdbc.queryForObject(
                 "SELECT content FROM comments ORDER BY id DESC LIMIT 1", String.class);
@@ -319,7 +319,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         long article = createPublishedArticle(adminToken());
         HttpResult guest = post("/api/v1/articles/" + article + "/comments",
                 Map.of("content", "游客说", "guestNickname", "路人甲"), null);
-        assertThat(guest.status()).isEqualTo(201);
+        assertThat(guest.status()).isEqualTo(200);
         assertThat(guest.data().path("author").path("guest").asBoolean()).isTrue();
 
         jdbc.update("""
@@ -444,7 +444,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     void guestbookLifecycle() {
         HttpResult created = post("/api/v1/guestbook",
                 Map.of("content", "站点不错", "nickname", "访客"), null);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         long id = created.data().path("id").asLong();
 
         // 默认审核开启 → 公开列表为空
@@ -520,7 +520,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     private long approvedCommentBy(long article, String content, String token) {
         HttpResult created = post("/api/v1/articles/" + article + "/comments",
                 commentBody(content), token);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         long id = created.data().path("id").asLong();
         assertThat(put("/api/v1/admin/comments/" + id + "/status",
                 Map.of("status", "APPROVED"), adminToken()).status()).isEqualTo(200);
@@ -557,7 +557,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         String commenter = accessToken(commenterName, PASSWORD);
         HttpResult comment = post("/api/v1/articles/" + article + "/comments",
                 commentBody("路过"), commenter);
-        assertThat(comment.status()).isEqualTo(201);
+        assertThat(comment.status()).isEqualTo(200);
         long commentId = comment.data().path("id").asLong();
 
         // EDITOR 不带 articleId 查全站评论 → 403；带自己的 articleId → 200
@@ -575,7 +575,7 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         // 作者不能审自己的评论（防自审拿分）
         HttpResult selfComment = post("/api/v1/articles/" + article + "/comments",
                 commentBody("自评"), author);
-        assertThat(selfComment.status()).isEqualTo(201);
+        assertThat(selfComment.status()).isEqualTo(200);
         long selfId = selfComment.data().path("id").asLong();
         assertThat(put("/api/v1/admin/comments/" + selfId + "/status",
                 Map.of("status", "APPROVED"), author).status()).isEqualTo(403);
@@ -709,5 +709,24 @@ class InteractionIntegrationTest extends IdentityTestSupport {
 
         assertThat(lines).isNotEmpty();
         assertThat(String.join("\n", lines)).contains("event:ready").contains("unreadCount");
+    }
+    @Test
+    void offsetPaginationRejectsOutOfRangeParams() throws Exception {
+        String username = unique("pg");
+        register(username, PASSWORD, null);
+        String token = accessToken(username, PASSWORD);
+
+        HttpResult oversize = get("/api/v1/notifications?page=1&pageSize=999", token);
+        assertThat(oversize.status()).isEqualTo(400);
+        assertThat(oversize.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+
+        HttpResult zeroPage = get("/api/v1/notifications?page=0&pageSize=5", token);
+        assertThat(zeroPage.status()).isEqualTo(400);
+
+        HttpResult negative = get("/api/v1/notifications?page=-3&pageSize=5", token);
+        assertThat(negative.status()).isEqualTo(400);
+
+        HttpResult legal = get("/api/v1/notifications?page=1&pageSize=50", token);
+        assertThat(legal.status()).isEqualTo(200);
     }
 }

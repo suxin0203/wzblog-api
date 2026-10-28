@@ -47,7 +47,7 @@ public class GuestbookController {
             @Valid @RequestBody GuestbookCreateRequest request) {
         GuestbookVO created = guestbookAppService.create(user, ClientInfo.from(httpRequest),
                 request.content(), request.nickname());
-        return ResponseEntity.status(201).body(Result.ok(created));
+        return ResponseEntity.ok(Result.ok(created));
     }
 
     @DeleteMapping("/{id}")

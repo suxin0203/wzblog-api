@@ -1,6 +1,7 @@
 package com.wzblog.modules.admin.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.modules.admin.app.DashboardAppService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -40,7 +41,7 @@ public class AuditLogController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(Result.ok(dashboardAppService.auditLogs(action, targetType,
-                operatorId, from, to, Math.max(1, page),
-                Math.min(Math.max(1, pageSize), 100))));
+                operatorId, from, to, PageParams.requirePage(page),
+                PageParams.requirePageSize(pageSize))));
     }
 }

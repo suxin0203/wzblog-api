@@ -1,6 +1,7 @@
 package com.wzblog.modules.points.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.points.api.dto.OrderTransitionRequest;
@@ -55,7 +56,7 @@ public class AdminPointsController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(Result.ok(orderAppService.adminList(userId, status, orderNo,
-                from, to, Math.max(1, page), Math.min(Math.max(1, pageSize), 100))));
+                from, to, PageParams.requirePage(page), PageParams.requirePageSize(pageSize))));
     }
 
     @GetMapping("/points/orders/{orderNo}")
@@ -83,7 +84,7 @@ public class AdminPointsController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(Result.ok(pointsQueryService.adminLedger(userId, type, bizType,
-                from, to, Math.max(1, page), Math.min(Math.max(1, pageSize), 100))));
+                from, to, PageParams.requirePage(page), PageParams.requirePageSize(pageSize))));
     }
 
     @PostMapping("/users/{userId}/points")

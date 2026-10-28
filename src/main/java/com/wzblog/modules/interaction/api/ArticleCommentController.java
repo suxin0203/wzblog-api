@@ -50,6 +50,6 @@ public class ArticleCommentController {
             @Valid @RequestBody CreateCommentRequest request) {
         CommentNodeVO created = commentAppService.create(user, ClientInfo.from(httpRequest),
                 articleId, request.content(), request.parentId(), request.guestNickname());
-        return ResponseEntity.status(201).body(Result.ok(created));
+        return ResponseEntity.ok(Result.ok(created));
     }
 }

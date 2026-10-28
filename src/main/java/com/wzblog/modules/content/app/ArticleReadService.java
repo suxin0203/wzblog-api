@@ -3,6 +3,7 @@ package com.wzblog.modules.content.app;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wzblog.common.api.CursorCodec;
 import com.wzblog.common.api.CursorPage;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.PageResult;
 import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.error.ErrorCode;
@@ -255,8 +256,8 @@ public class ArticleReadService {
     }
 
     public PageResult<ArticleListItemVO> me(CurrentUser currentUser, String status, int page, int pageSize) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
+        int safePage = PageParams.requirePage(page);
+        int safeSize = PageParams.requirePageSize(pageSize);
         String statusFilter = statusFilter(status);
         long total = articleMapper.countMe(currentUser.id(), statusFilter);
         List<Article> rows = articleMapper.selectMe(currentUser.id(), statusFilter,
@@ -270,8 +271,8 @@ public class ArticleReadService {
         if (keyword != null && keyword.length() > 50) {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "keyword 不能超过 50 字符", null);
         }
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
+        int safePage = PageParams.requirePage(page);
+        int safeSize = PageParams.requirePageSize(pageSize);
         String statusFilter = statusFilter(status);
         String visibilityFilter = visibilityFilter(visibility);
         String sortKey = switch (sort == null || sort.isBlank() ? "updatedAt" : sort) {

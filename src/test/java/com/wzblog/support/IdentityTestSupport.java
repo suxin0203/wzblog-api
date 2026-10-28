@@ -148,10 +148,10 @@ public abstract class IdentityTestSupport {
         return post("/api/v1/auth/register", registerBody(username, password, email, null), null);
     }
 
-    /** 注册并断言 201，返回用户 ID 字符串。 */
+    /** 注册并断言 200（统一成功码），返回用户 ID 字符串。 */
     protected String register(String username, String password, String email) {
         HttpResult result = registerRaw(username, password, email);
-        org.assertj.core.api.Assertions.assertThat(result.status()).as("register status: " + result.body()).isEqualTo(201);
+        org.assertj.core.api.Assertions.assertThat(result.status()).as("register status: " + result.body()).isEqualTo(200);
         return result.data().path("id").asText();
     }
 

@@ -38,7 +38,7 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         String email = username + "@test.local";
 
         HttpResult created = registerRaw(username, PASSWORD, email);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         assertThat(created.code()).isEqualTo("OK");
         JsonNode data = created.data();
         assertThat(data.path("id").isTextual()).isTrue();
@@ -88,7 +88,7 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         registerBody.put("username", username);
         registerBody.put("password", PASSWORD);
         HttpResult created = post("/api/v1/auth/register", registerBody, null);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         assertThat(created.data().path("id").isTextual()).isTrue();
 
         HttpResult login = post("/api/v1/auth/login",
@@ -449,7 +449,7 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         createBody.put("nickname", "后台创建");
         createBody.put("email", username + "@test.local");
         HttpResult created = post("/api/v1/admin/users", createBody, admin);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         String id = created.data().path("id").asText();
         assertThat(id).matches("\\d+");
 
@@ -542,7 +542,7 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         createBody.put("role", "ADMIN");
         createBody.put("status", "ACTIVE");
         HttpResult created = post("/api/v1/admin/users", createBody, admin);
-        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.status()).isEqualTo(200);
         Long lastAdminId = Long.valueOf(created.data().path("id").asText());
 
         List<Long> otherAdmins = jdbc.queryForList(

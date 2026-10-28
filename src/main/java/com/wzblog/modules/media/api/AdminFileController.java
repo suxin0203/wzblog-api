@@ -1,6 +1,7 @@
 package com.wzblog.modules.media.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.modules.media.api.dto.CleanupRequest;
 import com.wzblog.modules.media.api.vo.AdminFileVO;
@@ -39,8 +40,8 @@ public class AdminFileController {
             @RequestParam(value = "uploader", required = false) Long uploader,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        int boundedPage = Math.max(1, page);
-        int boundedSize = Math.min(Math.max(1, pageSize), 100);
+        int boundedPage = PageParams.requirePage(page);
+        int boundedSize = PageParams.requirePageSize(pageSize);
         return ResponseEntity.ok(Result.ok(
                 fileAppService.adminList(status, uploader, boundedPage, boundedSize)));
     }

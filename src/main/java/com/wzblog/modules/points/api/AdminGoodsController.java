@@ -1,6 +1,7 @@
 package com.wzblog.modules.points.api;
 
 import com.wzblog.common.api.PageResult;
+import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.points.api.dto.GoodsUpsertRequest;
@@ -42,13 +43,13 @@ public class AdminGoodsController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(Result.ok(goodsAppService.adminList(status, type, keyword,
-                Math.max(1, page), Math.min(Math.max(1, pageSize), 100))));
+                PageParams.requirePage(page), PageParams.requirePageSize(pageSize))));
     }
 
     @PostMapping
     public ResponseEntity<Result<GoodsVO>> create(@AuthenticationPrincipal CurrentUser admin,
                                                   @Valid @RequestBody GoodsUpsertRequest request) {
-        return ResponseEntity.status(201).body(Result.ok(goodsAppService.create(admin, request)));
+        return ResponseEntity.ok(Result.ok(goodsAppService.create(admin, request)));
     }
 
     @PutMapping("/{id}")
