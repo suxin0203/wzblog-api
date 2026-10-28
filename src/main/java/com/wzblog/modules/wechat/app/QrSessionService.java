@@ -1,6 +1,7 @@
 package com.wzblog.modules.wechat.app;
 
 import com.wzblog.common.error.BusinessException;
+import com.wzblog.common.ratelimit.SlidingWindowRateLimiter;
 import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.util.Times;
 import com.wzblog.modules.identity.app.WechatIdentityFacade;
@@ -45,22 +46,28 @@ public class QrSessionService {
     private final WechatIdentityFacade identityFacade;
     private final WechatProperties properties;
     private final StringRedisTemplate redis;
+    private final SlidingWindowRateLimiter rateLimiter;
 
     public QrSessionService(QrSessionMapper sessionMapper, WeChatApiClient weChatApi,
                             WechatIdentityFacade identityFacade,
-                            WechatProperties properties, StringRedisTemplate redis) {
+                            WechatProperties properties, StringRedisTemplate redis,
+                            SlidingWindowRateLimiter rateLimiter) {
         this.sessionMapper = sessionMapper;
         this.weChatApi = weChatApi;
         this.identityFacade = identityFacade;
         this.properties = properties;
         this.redis = redis;
+        this.rateLimiter = rateLimiter;
     }
 
     // ------------------------------------------------------------ 创建与轮询
 
-    /** 创建会话；PNG 以 base64 dataURL 返回（旧契约 createSession 响应字段 miniProgramCode）。 */
-    @Transactional
+    /**
+     * 创建会话；PNG 以 base64 dataURL 返回（旧契约 createSession 响应字段 miniProgramCode）。
+     * 无事务：单条 INSERT 原子，码生成是上游 HTTP 调用——事务内调上游会占死 DB 连接。
+     */
     public CreatedSession create(String clientIp, String userAgent, String envVersion) {
+        requireRate("qr-create", clientIp, 10, 60); // 无鉴权接口：防耗尽 getwxacodeunlimit 配额
         LocalDateTime now = Times.nowUtc();
         LocalDateTime expiresAt = now.plusMinutes(properties.getSessionTtlMinutes());
         String sceneId = uniqueSceneId();
@@ -143,8 +150,8 @@ public class QrSessionService {
      * 扫码进入（旧契约 /miniapp/qr-login/entry）：
      * code→openid；已绑定 → 确认会话返回 login_ok；未绑定 → 存 temp_openid + bindToken。
      */
-    @Transactional
     public EntryResult entry(String sceneId, String code, String clientIp, String userAgent) {
+        requireRate("qr-entry", clientIp, 20, 60);
         QrSession session = requireSession(sceneId);
         LocalDateTime now = Times.nowUtc();
         if (session.getExpiresAt().isBefore(now) || !QrSession.PENDING.equals(session.getStatus())) {
@@ -299,6 +306,16 @@ public class QrSessionService {
     }
 
     // ------------------------------------------------------------ 内部
+
+    /** 旧协议路径频控（无鉴权接口的第一道防线）。 */
+    public void requireRate(String scene, String ip, int limit, int windowSeconds) {
+        var verdict = rateLimiter.check("wzblog:wechat:rl:" + scene + ":" + ip,
+                java.time.Duration.ofSeconds(windowSeconds), limit);
+        if (!verdict.allowed()) {
+            throw new BusinessException(ErrorCode.COMMON_RATE_LIMITED,
+                    "操作过于频繁，请稍后再试", verdict.retryAfterSeconds());
+        }
+    }
 
     private void cacheStatus(String sceneId, String status, LocalDateTime expiresAt) {
         redis.opsForValue().set(STATUS_PREFIX + sceneId, status,

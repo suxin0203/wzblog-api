@@ -49,8 +49,9 @@ public class PointsReconcileJob {
     }
 
     public void run() {
-        Boolean acquired = redis.opsForValue().setIfAbsent(LOCK_KEY, "1", Duration.ofMinutes(30));
-        if (!Boolean.TRUE.equals(acquired)) {
+        com.wzblog.common.lock.OwnerAwareRedisLock lock =
+                new com.wzblog.common.lock.OwnerAwareRedisLock(redis, LOCK_KEY);
+        if (!lock.tryAcquire(Duration.ofMinutes(30))) {
             log.info("积分对账跳过：锁被其他实例持有");
             return;
         }
@@ -77,7 +78,7 @@ public class PointsReconcileJob {
                         result.ledgerId());
             }
         } finally {
-            redis.delete(LOCK_KEY);
+            lock.release();
         }
     }
 }
