@@ -129,7 +129,9 @@ public class CommentAppService {
         if (comment.getStatus() == CommentStatus.APPROVED) {
             articleCounterService.increment(articleId, CounterType.COMMENT, 1);
         }
-        return toNode(comment, user == null ? null : Set.of(user.id()), Map.of(),
+        // 裁决 B-3：登录用户创建的评论需带完整 author（缺 users 映射会退化成匿名壳）
+        Map<Long, UserBrief> users = loadUsers(List.of(comment));
+        return toNode(comment, user == null ? null : Set.of(user.id()), users,
                 false, 0).build();
     }
 

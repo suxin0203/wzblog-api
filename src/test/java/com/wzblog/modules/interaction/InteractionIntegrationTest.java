@@ -715,6 +715,75 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void commentAuthorIdIsStringAndCreateReturnsFullAuthor() {
+        long article = createPublishedArticle(adminToken());
+
+        // B-3：登录用户创建评论，响应 author 必须是完整作者（非匿名壳），userId 为字符串
+        HttpResult created = post("/api/v1/articles/" + article + "/comments",
+                commentBody("B1B3 校验"), adminToken());
+        assertThat(created.status()).as("create: %s", created.body()).isEqualTo(200);
+        JsonNode author = created.data().path("author");
+        assertThat(author.path("userId").isTextual())
+                .as("B-1 create author.userId 应为字符串: %s", author).isTrue();
+        assertThat(author.path("userId").asText()).isEqualTo("1");
+        assertThat(author.path("nickname").asText()).isNotBlank().isNotEqualTo("匿名");
+        assertThat(author.path("guest").isBoolean()).isTrue();
+
+        // 审核通过后列表同样断言
+        long commentId = created.data().path("id").asLong();
+        put("/api/v1/admin/comments/" + commentId + "/status",
+                Map.of("status", "APPROVED", "remark", "ok"), adminToken());
+        HttpResult list = get("/api/v1/articles/" + article + "/comments", null);
+        assertThat(list.status()).isEqualTo(200);
+        JsonNode listAuthor = list.data().path("list").get(0).path("author");
+        assertThat(listAuthor.path("userId").isTextual())
+                .as("B-1 list author.userId 应为字符串: %s", listAuthor).isTrue();
+
+        // 留言 B-1：创建响应即带完整作者；审核通过后列表同样为字符串
+        HttpResult gb = post("/api/v1/guestbook",
+                Map.of("content", "B1 留言校验", "nickname", "qa"), adminToken());
+        assertThat(gb.status()).as("guestbook create: %s", gb.body()).isEqualTo(200);
+        JsonNode gbAuthor = gb.data().path("author");
+        assertThat(gbAuthor.path("userId").isTextual())
+                .as("B-1 guestbook create author.userId 应为字符串: %s", gbAuthor).isTrue();
+        long gbId = gb.data().path("id").asLong();
+        put("/api/v1/admin/guestbook/" + gbId + "/status",
+                Map.of("status", "APPROVED", "remark", "ok"), adminToken());
+        HttpResult gbList = get("/api/v1/guestbook?page=1&pageSize=5", adminToken());
+        assertThat(gbList.status()).isEqualTo(200);
+        JsonNode gbItems = gbList.data().path("list").size() > 0
+                ? gbList.data().path("list") : gbList.data();
+        boolean foundStringUserId = false;
+        for (JsonNode item : gbItems) {
+            if (item.path("id").asText().equals(String.valueOf(gbId))) {
+                JsonNode listedAuthor = item.path("author");
+                assertThat(listedAuthor.path("userId").isTextual())
+                        .as("B-1 guestbook list author.userId 应为字符串: %s", listedAuthor).isTrue();
+                foundStringUserId = true;
+                break;
+            }
+        }
+        assertThat(foundStringUserId).as("审核后的留言应出现在列表").isTrue();
+
+        // 收尾隐藏，避免影响 guestbookLifecycle 的公开列表计数断言
+        put("/api/v1/admin/guestbook/" + gbId + "/status",
+                Map.of("status", "HIDDEN", "remark", "cleanup"), adminToken());
+
+        // 通知 B-1
+        HttpResult notifList = get("/api/v1/notifications?page=1&pageSize=5", adminToken());
+        assertThat(notifList.status()).isEqualTo(200);
+        for (JsonNode item : notifList.data().path("list")) {
+            JsonNode actor = item.path("actor");
+            if (!actor.isMissingNode() && !actor.path("userId").isNull()
+                    && !actor.path("userId").isMissingNode()) {
+                assertThat(actor.path("userId").isTextual())
+                        .as("B-1 notification actor.userId 应为字符串: %s", actor).isTrue();
+                break;
+            }
+        }
+    }
+
+    @Test
     void sseStreamLimitReturns429JsonEvenWithEventStreamAccept() {
         String username = unique("ssl");
         register(username, PASSWORD, null);
