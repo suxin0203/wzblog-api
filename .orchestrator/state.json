@@ -1,0 +1,85 @@
+{
+  "startedAt": "2026-10-30T03:25:00+08:00",
+  "backendRepo": "E:/MyCodeProject/Java/文栈博客后端AI重构数据库版本",
+  "frontendRepo": "E:/MyCodeProject/Java/wzblog-frontend",
+  "baseline": {
+    "backendCommit": "d88b8d0",
+    "frontendCommit": "235215e",
+    "backendTests": "pass (122/122)",
+    "frontendTypeCheck": "pass",
+    "frontendBuild": "pass"
+  },
+  "env": {
+    "backendPing": "pong (8021)",
+    "frontend": "5173 OK, /api proxy OK",
+    "mysql": "local-mysql8 up",
+    "redis": "local-redis up",
+    "debugAdmin": "exists id=1001 ACTIVE (满数据场景可用)"
+  },
+  "notes": [
+    "application.yml 有未提交本地改动：AI provider 默认 mock->openai，属项目所有者有意改动，保留；失败隔离回滚时须避开该文件，不得使用 git checkout -- . 全量回滚",
+    "ORCHESTRATOR.md 根目录存在但未跟踪",
+    "docs/api/ 未跟踪（只读契约，不动 git 状态）",
+    "根目录无《项目全景与联调输入.md》"
+  ],
+  "round": 24,
+  "queues": [
+    {
+      "id": 1,
+      "name": "公开阅读链路+登录注册",
+      "status": "done",
+      "pass": 25,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "id": 2,
+      "name": "用户资料/会话管理",
+      "status": "done",
+      "pass": 12,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "id": 3,
+      "name": "作者工作台",
+      "status": "done",
+      "pass": 8,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "id": 4,
+      "name": "互动",
+      "status": "pending",
+      "pass": 0,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "id": 5,
+      "name": "积分下单+称号",
+      "status": "pending",
+      "pass": 0,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "id": 6,
+      "name": "通知",
+      "status": "pending",
+      "pass": 0,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "id": 7,
+      "name": "AI",
+      "status": "pending",
+      "pass": 0,
+      "fail": 0,
+      "skipped": 0
+    }
+  ],
+  "lastCheckpointCommit": "1f0eff2"
+}
