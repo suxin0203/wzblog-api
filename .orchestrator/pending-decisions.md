@@ -9,3 +9,4 @@
 - [S0] `docs/api/AI前端体验优化任务单.md` 内容已被 ORCHESTRATOR.md 副本覆盖，AI 五块验收原文缺失。处置：按 接口对接文档 §16 + 附录C 1.6.3 交叉还原口径验收：①SSE 打字机（fetch+ReadableStream）②tool 事件思考步骤条（brief/params/resultCount）③配额展示（/ai/quota，429 按 Retry-After）④AI 页面滚动修复⑤轮播图/商品示例图。已尽力还原，不阻塞。
 - [队列1] SSE 通知流 429 限流后前端指数退避重连（1s→30s），未读 Retry-After 头；契约仅建议"限流读 Retry-After"，不阻塞。可作后续小改进。
 - [队列1] 服务端 SSE 连接在客户端 abort 后滞留至写失败/超时才摘除，短时间高频换页可能触发 429；单实例内存版已知行为，自愈，不阻塞。
+- [队列5] 积分余额 useCountUp 为 rAF 驱动：无 OS 焦点的后台窗口 rAF 被 Chrome 冻结（实测 30s 零帧），余额显示停在 0；前台正常且可见后恢复。环境行为非缺陷，未改前端。
