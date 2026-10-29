@@ -22,7 +22,7 @@
     "docs/api/ 未跟踪（只读契约，不动 git 状态）",
     "根目录无《项目全景与联调输入.md》"
   ],
-  "round": 42,
+  "round": 45,
   "queues": [
     {
       "id": 1,
@@ -75,11 +75,12 @@
     {
       "id": 7,
       "name": "AI",
-      "status": "pending",
-      "pass": 0,
+      "status": "done",
+      "pass": 9,
       "fail": 0,
       "skipped": 0
     }
   ],
-  "lastCheckpointCommit": "26b4d3e"
+  "lastCheckpointCommit": "26b4d3e",
+  "status": "done"
 }
