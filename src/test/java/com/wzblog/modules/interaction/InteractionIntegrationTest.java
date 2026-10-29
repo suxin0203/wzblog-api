@@ -41,6 +41,9 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     @Autowired
     private com.wzblog.modules.interaction.app.InteractionReconcileService reconcileService;
 
+    @Autowired
+    private com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry sseConnectionRegistry;
+
     /** 提权为 EDITOR 后返回其 token（普通用户无发文权限）。 */
     private String editorToken(String username) {
         Long id = userId(username);
@@ -709,6 +712,30 @@ class InteractionIntegrationTest extends IdentityTestSupport {
 
         assertThat(lines).isNotEmpty();
         assertThat(String.join("\n", lines)).contains("event:ready").contains("unreadCount");
+    }
+
+    @Test
+    void sseStreamLimitReturns429JsonEvenWithEventStreamAccept() {
+        String username = unique("ssl");
+        register(username, PASSWORD, null);
+        String token = accessToken(username, PASSWORD);
+        long userId = userId(username);
+
+        for (int i = 0; i < com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry.MAX_PER_USER; i++) {
+            assertThat(sseConnectionRegistry.register(userId,
+                    new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(0L))).isTrue();
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
+        org.springframework.http.ResponseEntity<String> resp = rest.exchange(
+                URI.create("/api/v1/notifications/stream"), HttpMethod.GET,
+                new HttpEntity<>(headers), String.class);
+
+        assertThat(resp.getStatusCode().value()).isEqualTo(429);
+        assertThat(resp.getHeaders().getContentType().isCompatibleWith(MediaType.APPLICATION_JSON)).isTrue();
+        assertThat(resp.getBody()).contains("NOTIFY_STREAM_LIMITED");
     }
     @Test
     void offsetPaginationRejectsOutOfRangeParams() throws Exception {
