@@ -63,6 +63,9 @@ public class UserAppService {
     @Transactional
     public UserSelfVO updateProfile(CurrentUser currentUser, UpdateProfileRequest request) {
         User user = requireUser(currentUser.id());
+        // 契约 UpdateProfileRequest 无必填项：昵称缺省/空白保持原值（DB 非空，展示层依赖）
+        String nickname = request.nickname() == null || request.nickname().isBlank()
+                ? user.getNickname() : request.nickname().trim();
         String bio = request.bio() == null || request.bio().isBlank() ? null : request.bio().trim();
         String avatarKey = request.avatarKey() == null || request.avatarKey().isBlank()
                 ? null : request.avatarKey().trim();
@@ -73,7 +76,7 @@ public class UserAppService {
         String previousAvatar = user.getAvatarKey();
         userMapper.update(null, new LambdaUpdateWrapper<User>()
                 .eq(User::getId, user.getId())
-                .set(User::getNickname, request.nickname().trim())
+                .set(User::getNickname, nickname)
                 .set(User::getBio, bio)
                 .set(User::getAvatarKey, avatarKey)
                 .setSql("version = version + 1")
