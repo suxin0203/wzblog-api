@@ -59,6 +59,15 @@ public class AiToolRegistry {
                         """));
     }
 
+    /** 工具中文名，供 SSE tool 事件 brief 展示；未注册名称返回 null。 */
+    public String descriptionOf(String name) {
+        return specs().stream()
+                .filter(spec -> spec.name().equals(name))
+                .map(ChatClient.ToolSpec::description)
+                .findFirst()
+                .orElse(null);
+    }
+
     /** 执行工具；非法参数或异常统一转可读错误结果（不中断对话）。 */
     public String execute(String name, String argumentsJson) {
         try {

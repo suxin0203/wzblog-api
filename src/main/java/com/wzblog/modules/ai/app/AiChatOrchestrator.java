@@ -164,12 +164,14 @@ public class AiChatOrchestrator {
                 // OpenAI 协议要求：先回放 assistant 的 tool_calls 决策，再给 tool 结果（带 tool_call_id）
                 context.add(ChatClient.ChatMessage.assistantToolCalls(completion.toolCalls()));
                 for (ChatClient.ToolCall call : completion.toolCalls()) {
+                    String brief = toolRegistry.descriptionOf(call.name());
                     send(emitter, "tool", Map.of("name", call.name(),
-                            "brief", "正在检索站内数据", "status", "start"));
+                            "brief", brief == null ? "正在检索站内数据" : brief,
+                            "status", "start", "params", summarizeParams(call.argumentsJson())));
                     String result = toolRegistry.execute(call.name(), call.argumentsJson());
                     int resultCount = countResults(result);
                     send(emitter, "tool", Map.of("name", call.name(),
-                            "brief", "检索完成", "status", "end", "resultCount", resultCount));
+                            "brief", "执行完成", "status", "end", "resultCount", resultCount));
                     context.add(ChatClient.ChatMessage.tool(result, call.id()));
                     insertToolMessage(session.getId(), call, result);
                 }
@@ -329,5 +331,31 @@ public class AiChatOrchestrator {
         } catch (Exception ex) {
             return 0;
         }
+    }
+
+    /** tool start 帧的入参摘要：对象字段 ≤10 键，单值截断 120 字符；非对象或解析失败返回空 Map。 */
+    private Map<String, Object> summarizeParams(String argumentsJson) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode node =
+                    objectMapper.readTree(argumentsJson == null || argumentsJson.isBlank()
+                            ? "{}" : argumentsJson);
+            if (!node.isObject()) {
+                return Map.of();
+            }
+            Map<String, Object> params = new java.util.LinkedHashMap<>();
+            var fields = node.fields();
+            while (fields.hasNext() && params.size() < 10) {
+                var field = fields.next();
+                params.put(field.getKey(), summarizeValue(field.getValue()));
+            }
+            return params;
+        } catch (Exception ex) {
+            return Map.of();
+        }
+    }
+
+    private static String summarizeValue(com.fasterxml.jackson.databind.JsonNode value) {
+        String text = value.isValueNode() ? value.asText() : value.toString();
+        return text.length() <= 120 ? text : text.substring(0, 120) + "…";
     }
 }

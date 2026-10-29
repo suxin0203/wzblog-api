@@ -141,6 +141,14 @@ class AiIntegrationTest extends IdentityTestSupport {
         assertThat(result.events().indexOf("tool"))
                 .isLessThan(result.events().indexOf("done"));
 
+        // tool start 帧：brief 取自工具注册表中文描述（非旧硬编码文案），params 携带入参摘要
+        JsonNode toolStart = parse(result.dataOf("tool"));
+        assertThat(toolStart.path("status").asText()).isEqualTo("start");
+        assertThat(toolStart.path("name").asText()).isEqualTo("search_articles");
+        assertThat(toolStart.path("brief").asText()).isEqualTo("按关键词检索站内已公开文章");
+        assertThat(toolStart.path("params").path("query").asText())
+                .contains("虚拟线程");
+
         JsonNode done = parse(result.dataOf("done"));
         assertThat(done.path("finishReason").asText()).isEqualTo("stop");
         String messageId = done.path("messageId").asText();
