@@ -55,7 +55,7 @@ public class FileAppService implements FileReferencePort {
 
     private static final Logger log = LoggerFactory.getLogger(FileAppService.class);
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyy/MM", Locale.ROOT);
-    /** 本地模式桶名常量（docs/11 §5.1）。 */
+    /** 本地模式桶名常量（docs/archive/reports/11-本地环境与运行.md §5.1）。 */
     private static final String LOCAL_BUCKET = "local";
     /** key 正则兜底（M5 §6.2）。 */
     private static final java.util.regex.Pattern KEY_PATTERN = java.util.regex.Pattern.compile(

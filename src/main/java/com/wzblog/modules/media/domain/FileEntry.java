@@ -9,7 +9,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * files 表实体（V1__schema.sql）。本地磁盘模式下 bucket 固定为 {@code local}（docs/11 §5.1）。
+ * files 表实体（V1__schema.sql）。本地磁盘模式下 bucket 固定为 {@code local}（docs/archive/reports/11-本地环境与运行.md §5.1）。
  */
 @Getter
 @Setter

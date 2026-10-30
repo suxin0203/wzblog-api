@@ -1,4 +1,4 @@
-# WzBlog Backend · 文栈博客后端
+﻿# WzBlog Backend · 文栈博客后端
 
 [![CI](https://github.com/suxin0203/wzblog-api/actions/workflows/ci.yml/badge.svg)](https://github.com/suxin0203/wzblog-api/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/suxin0203/wzblog-api/branch/master/graph/badge.svg)](https://codecov.io/gh/suxin0203/wzblog-api)
@@ -77,6 +77,49 @@ curl http://localhost:8021/api/v1/ping
 # 覆盖率报告 → target/site/jacoco/index.html
 ```
 
+### 运维命令（抽取自归档的 02 / 08 / 11）
+
+**环境自检**
+
+```bash
+java -version
+mvn -v
+docker compose version
+docker info --format '{{.ServerVersion}}'
+```
+
+**本地启动与测试**
+
+```bash
+source scripts/env.sh
+scripts/mvn.sh -q -DskipTests compile
+scripts/mvn.sh test
+scripts/run.sh
+curl -i http://localhost:8021/api/v1/ping
+curl -i http://localhost:8021/api/v1/users/me   # 期望 401 AUTH_UNAUTHORIZED
+```
+
+**独立迁移（发布用）**
+
+```bash
+docker run --rm --network wzblog-net   -v "$PWD/db/migration:/flyway/sql:ro"   -e FLYWAY_URL="jdbc:mysql://mysql:3306/wzblog" -e FLYWAY_USER="$DB_USERNAME"   -e FLYWAY_PASSWORD="$DB_PASSWORD"   flyway/flyway:latest -locations=filesystem:/flyway/sql migrate
+```
+
+**健康检查**
+
+```bash
+curl -i http://localhost:8021/api/v1/ping
+curl -i http://localhost:8021/actuator/health
+```
+
+**数据库校验（恢复后）**
+
+```bash
+docker compose exec -T mysql mysql -uroot -p"$DB_ROOT_PASSWORD" -N -e   "select count(*) from information_schema.tables where table_schema='wzblog';
+   select version, success from wzblog.flyway_schema_history order by installed_rank desc limit 3;
+   select count(*) from wzblog.users; select count(*) from wzblog.articles;"
+```
+
 ## 🔐 安全设计速览
 
 | 威胁 | 对策 |
@@ -101,20 +144,24 @@ curl http://localhost:8021/api/v1/ping
 
 | 入口 | 位置 |
 |---|---|
-| 接口契约总表 | [docs/04-接口契约.md](docs/04-接口契约.md)：路由、权限、幂等、分页/游标、SSE、错误码 |
+| 接口契约总表 | [docs/api/接口对接文档.md](docs/api/接口对接文档.md)：接口契约（§21 含路由/权限/幂等/分页/SSE/错误码总表） |
 | 业务逻辑与角色 | [docs/14-业务逻辑与角色定义.md](docs/14-业务逻辑与角色定义.md)：A 方案口径、角色职责、七条业务闭环、规则与不变量 |
-| 字段级 DTO | [docs/modules/](docs/modules/)：M1~M8 各模块 §4 |
+| 字段级 DTO | [docs/archive/design/modules/](docs/archive/design/modules/)：M1~M8 模块设计（历史归档） |
 | 在线调试 | 启动后访问 `http://localhost:8021/swagger-ui.html`（右上角 Authorize 填 accessToken） |
 | OpenAPI JSON | `http://localhost:8021/v3/api-docs` |
-| 小程序旧协议 | [docs/13-微信扫码复原计划.md](docs/13-微信扫码复原计划.md)（`/wechat/*`、`/qr-login/*`、`/miniapp/*`、`/users/*`） |
+| 小程序旧协议 | [docs/archive/plans/13-微信扫码复原计划.md](docs/archive/plans/13-微信扫码复原计划.md)（历史归档）（`/wechat/*`、`/qr-login/*`、`/miniapp/*`、`/users/*`） |
 | Web 前端 API 层 | 同级项目 `wzblog-frontend/src/api/`（axios 封装在 `src/utils/request.ts`） |
+
+## 🗺️ 文档地图
+
+完整文档导航与权威性说明见 [docs/README.md](docs/README.md)（权威 9 份 + 归档说明 + 更新规则）。
 
 ## 📁 目录导览
 
 ```
 ├── db/migration/          # Flyway: 32 表 DDL + 种子数据（表全注释 + 索引 + CHECK 约束）
-├── docs/                  # 设计文档包（契约/表结构/模块设计/验收矩阵/学习指南）
-│   └── modules/           #   M0~M8 逐模块设计（状态机/时序/并发策略逐项冻结）
+├── docs/                  # 权威文档（见 docs/README.md）+ archive/ 历史快照
+│   └── archive/           #   design/plans/reports 分层归档（不作为依据）
 ├── scripts/               # run/mvn 包装（本地 JDK/Maven 无需全局安装）
 ├── src/main/java/com/wzblog/
 │   ├── common/            # 限流 Lua、游标分页、端口（FileReference 等）

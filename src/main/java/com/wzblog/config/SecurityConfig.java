@@ -60,7 +60,7 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_LEGACY_COMPAT_PATHS = {
-            // M8 兼容层（旧小程序协议，docs/13 v2）：/users/me 鉴权由过滤器输出 HTTP 401
+            // M8 兼容层（旧小程序协议，docs/archive/plans/13-微信扫码复原计划.md（v2））：/users/me 鉴权由过滤器输出 HTTP 401
             "/qr-login/**",
             "/miniapp/**",
             "/wechat/**",

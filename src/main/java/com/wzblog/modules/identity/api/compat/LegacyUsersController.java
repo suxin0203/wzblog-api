@@ -24,7 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 旧协议 /users/* 兼容端点（已上线小程序，docs/13 v2 §2.1）：
+ * 旧协议 /users/* 兼容端点（已上线小程序，docs/archive/plans/13-微信扫码复原计划.md（v2） §2.1）：
  * 算术验证码 / 注册 / 登录 / 刷新（不轮换）/ me。
  * 壳：HTTP 200 + 数字 code；密码 Base64、验证码答案 MD5；401 由 Java 过滤器按 Bearer 输出。
  */

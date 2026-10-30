@@ -6,7 +6,7 @@ import java.util.List;
  * 聊天上游端口：工具轮（非流式）与最终回答（流式分片）。
  * <p>mock 实现用于本地与测试；openai 实现走 OpenAI 兼容 /chat/completions。
  * 真流式 SSE 解析上游 chunk 需在接入真实 Key 后启用，当前 openai 实现
- * 以「非流式上游 + 服务端分片下发」满足同一 SSE 协议（docs/11 登记偏差）。</p>
+ * 以「非流式上游 + 服务端分片下发」满足同一 SSE 协议（docs/archive/reports/11-本地环境与运行.md 登记偏差）。</p>
  */
 public interface ChatClient {
 

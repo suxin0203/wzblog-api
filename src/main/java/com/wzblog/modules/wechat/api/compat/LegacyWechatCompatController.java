@@ -27,7 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 旧协议 /wechat/* + /qr-login/* + /miniapp/* 兼容端点（已上线小程序，docs/13 v2 §2.2）。
+ * 旧协议 /wechat/* + /qr-login/* + /miniapp/* 兼容端点（已上线小程序，docs/archive/plans/13-微信扫码复原计划.md（v2） §2.2）。
  * 严格复刻 Node 行为：轮询在 CONFIRMED 时一次性签发双 Token 并置 COMPLETED；
  * entry 未绑定下发 bindToken；过期统一 HTTP 200 + code:410。
  */

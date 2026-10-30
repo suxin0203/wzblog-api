@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 扫码会话状态机（docs/13 v2，兼容已上线小程序语义）：
+ * 扫码会话状态机（docs/archive/plans/13-微信扫码复原计划.md（v2），兼容已上线小程序语义）：
  * PENDING →（entry：已绑定直发 CONFIRMED / 未绑定发 bindToken）→ CONFIRMED →（轮询取票一次性）COMPLETED / EXPIRED。
  * 热点态（status）缓存 Redis 与会话同 TTL；DB 为事实源与审计。轮询接口在 CONFIRMED 时
  * 一次性签发双 Token 并置 COMPLETED——旧系统语义，PC 端唯一取 Token 入口。

@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * 旧协议身份门面（兼容已上线小程序，docs/13 v2 §2.1）：
+ * 旧协议身份门面（兼容已上线小程序，docs/archive/plans/13-微信扫码复原计划.md（v2） §2.1）：
  * 算术验证码（MD5）、Base64 密码、宽松注册规则（≥4 位）、openid 顺带绑定、
  * refresh 不轮换（小程序沿用旧 refreshToken，轮换会触发家族复用检测踢线）。
  * 全部返回纯类型/Map，避免向 wechat 模块泄漏本模块 domain 类型（ArchUnit）。
