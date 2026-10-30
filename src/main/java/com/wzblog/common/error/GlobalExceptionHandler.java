@@ -30,7 +30,7 @@ public class GlobalExceptionHandler {
         if (ex.retryAfterSeconds() != null) {
             builder.header("Retry-After", String.valueOf(ex.retryAfterSeconds()));
         }
-        return builder.body(Result.fail(code, ex.getMessage()));
+        return builder.body(Result.fail(code, ex.getMessage(), ex.data()));
     }
 
     /**
