@@ -46,11 +46,7 @@ public interface ArticleMapper extends BaseMapper<Article> {
             SELECT
             """ + LIST_COLUMNS + """
             FROM articles a
-            WHERE """ + PUBLIC_FILTER + """
-            <choose>
-              <when test="pinned != null and pinned"> AND a.is_pinned = 1</when>
-              <otherwise> AND a.is_pinned = 0</otherwise>
-            </choose>
+            WHERE """ + PUBLIC_UNPINNED_FILTER + """
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="tagId != null">
               AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id = a.id AND at.tag_id = #{tagId})
@@ -75,7 +71,6 @@ public interface ArticleMapper extends BaseMapper<Article> {
                              @Param("to") LocalDateTime to,
                              @Param("cursorTime") LocalDateTime cursorTime,
                              @Param("cursorId") Long cursorId,
-                             @Param("pinned") Boolean pinned,
                              @Param("limit") int limit);
 
     @Select("""

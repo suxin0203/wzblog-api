@@ -561,7 +561,7 @@ class ContentIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
-    void archiveCountsExcludePinnedAndFeedSupportsPinnedParam() {
+    void archiveCountsExcludePinnedAndPinnedEndpointIsOnlyPath() {
         String token = adminToken();
         String keyword = unique("pin");
         List<Long> ids = new ArrayList<>();
@@ -588,12 +588,22 @@ class ContentIntegrationTest extends IdentityTestSupport {
         List<String> feedIds = listIds(feed.data().path("list"));
         assertThat(feedIds).hasSize(3).doesNotContain(String.valueOf(pinnedId));
 
-        HttpResult pinnedFeed = get("/api/v1/articles?pinned=true&size=3", null);
-        assertThat(pinnedFeed.status()).isEqualTo(200);
-        assertThat(listIds(pinnedFeed.data().path("list"))).contains(String.valueOf(pinnedId));
+        // 置顶唯一读取路径：/articles/pinned；size 越界按 1~10 夹取，默认 10
+        HttpResult pinnedList = get("/api/v1/articles/pinned?limit=3", null);
+        assertThat(pinnedList.status()).isEqualTo(200);
+        assertThat(listIds(pinnedList.data())).contains(String.valueOf(pinnedId));
 
-        assertThat(get("/api/v1/articles?pinned=false", null).status()).isEqualTo(400);
-        assertThat(get("/api/v1/articles?pinned=true&size=11", null).status()).isEqualTo(400);
+        HttpResult pinnedDefault = get("/api/v1/articles/pinned", null);
+        assertThat(pinnedDefault.status()).isEqualTo(200);
+        assertThat(pinnedDefault.data().size()).isLessThanOrEqualTo(10);
+
+        HttpResult pinnedOver = get("/api/v1/articles/pinned?limit=999", null);
+        assertThat(pinnedOver.status()).isEqualTo(200);
+        assertThat(pinnedOver.data().size()).isLessThanOrEqualTo(10);
+
+        HttpResult pinnedZero = get("/api/v1/articles/pinned?limit=0", null);
+        assertThat(pinnedZero.status()).isEqualTo(200);
+        assertThat(pinnedZero.data().size()).isLessThanOrEqualTo(1);
 
         HttpResult search = get("/api/v1/articles/search?keyword=" + keyword + "&size=10", null);
         assertThat(listIds(search.data().path("list"))).contains(String.valueOf(pinnedId));

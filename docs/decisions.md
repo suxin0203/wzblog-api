@@ -47,6 +47,13 @@
 - D41 AI stats.sessions 口径统一为 last_message_at，且半开；stats.sessions 必须等于列表条数
 - D42 验收数据只能反向调分回退，流水/审计不删
 - D43 语义变更必须同轮更新测试断言
+- D44 手工 SQL 探查/写入必须先 SET time_zone='+00:00'（运维铁律）
+- D45 存量 banner end_at +1s 白名单修正（8801/8802，备份 + 反向脚本）
+- D46 审计不删、AI 测试数据可删（按显式 id）
+- D47 AI 列表与统计共用同一筛选器（UI 需说明）
+- D48 （规划方预留，内容待规划方补录；执行方不自行分配）
+- D49 孤儿文件只清磁盘、files 记录软删（禁止物理删记录）
+- D50 死代码链式删除批准（零引用后删，保留 SearchHit 与全文索引）
 
 ## 编号映射表（旧条目 → 新编号）
 
@@ -67,7 +74,7 @@
 | D32 | D32 | end_at 1 秒缝 → 本轮以“存储半开、界面闭合”收口 |
 | D33 | D34 | DDL 历史行不回填，补入白名单修复判据 |
 
-新增补录（旧文件无对应编号）：D16–D19、D27、D29、D31、D33、D36–D43。
+新增补录（旧文件无对应编号）：D16–D19、D27、D29、D31、D33、D36–D47、D49、D50。
 
 ## 实施记录
 
@@ -94,3 +101,14 @@
 | 前端唯一入口 | 审计、AI sessions、AI stats、积分 orders、积分 ledger 全部经 datetime.ts（D40） | D32、D40 |
 | 验收数据回退 | 反向调分 −69 回退至 299，流水/审计零删除 | D37、D42 |
 | 测试同步 | AI sessions 断言由 3 改为 2，新增审计秒级、会话口径、banner 秒级到期用例 | D43 |
+
+### T-012 契约去冗余与数据卫生
+
+| 项目 | 实施与证据 | 关联 |
+| --- | --- | --- |
+| 移除 feed?pinned | Controller/Service/Mapper 回退固定 `is_pinned = 0`；列表页置顶改调 `GET /articles/pinned`；`pinned=true` 与类型字段清零 | D26 |
+| 死代码 | 链式删除 `sanitizeSearchKeyword` / `weightedScore` / `occurrences`（引用 0）；SearchHit 与全文索引保留 | D50 |
+| 孤儿文件 | 磁盘孤儿 3 个已备份并删除，files 记录改 DELETED；磁盘缺失记录仅登记 | D49 |
+| banner 存量 | 8801/8802 `end_at` +1s（备份 + 反向脚本 + SET time_zone='+00:00'） | D44、D45 |
+| AI 测试数据 | 2030 年 sessions 5 条、messages 4 条按显式 id 删除；审计 9707–9709 保留 | D46 |
+| UI 说明 | AI 管理页统计筛选旁标注“时间范围同时作用于统计与会话列表” | D47 |

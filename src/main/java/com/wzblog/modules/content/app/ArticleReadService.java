@@ -26,7 +26,6 @@ import com.wzblog.modules.content.domain.ArticleVisibility;
 import com.wzblog.modules.content.infra.config.ContentProperties;
 import com.wzblog.modules.content.infra.mapper.ArticleMapper;
 import com.wzblog.modules.content.infra.mapper.ArticleRevisionMapper;
-import com.wzblog.modules.content.infra.mapper.SearchHit;
 import com.wzblog.modules.identity.app.UserQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +34,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -87,24 +85,9 @@ public class ArticleReadService {
     }
 
     public CursorPage<ArticleListItemVO> feed(String keyword, String categoryId, String tagId,
-                                              Integer year, Integer month, Boolean pinned,
+                                              Integer year, Integer month,
                                               String cursor, Integer size) {
-        if (Boolean.FALSE.equals(pinned)) {
-            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR,
-                    "pinned 仅支持 true 或不传", null);
-        }
-        boolean pinnedOnly = Boolean.TRUE.equals(pinned);
-        int limit;
-        if (pinnedOnly) {
-            int requested = size == null ? 3 : size;
-            if (requested < 1 || requested > 10) {
-                throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR,
-                        "pinned 模式下 size 需为 1~10", null);
-            }
-            limit = requested;
-        } else {
-            limit = pageSize(size, 20, 50);
-        }
+        int limit = pageSize(size, 20, 50);
         if (keyword != null && keyword.length() > 50) {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "keyword 不能超过 50 字符", null);
         }
@@ -120,7 +103,7 @@ public class ArticleReadService {
         List<Article> rows = articleMapper.selectFeed(
                 Ids.parseNullable(categoryId), Ids.parseNullable(tagId), keywordFilter,
                 range == null ? null : range.from(), range == null ? null : range.to(),
-                cursorTime, cursorId, pinnedOnly, limit + 1);
+                cursorTime, cursorId, limit + 1);
         boolean hasNext = rows.size() > limit;
         if (hasNext) {
             rows = new ArrayList<>(rows.subList(0, limit));
@@ -345,28 +328,6 @@ public class ArticleReadService {
                 && (currentUser.role() == Role.EDITOR || currentUser.role() == Role.ADMIN);
     }
 
-    private double weightedScore(SearchHit hit, String keyword, Instant now) {
-        double score = hit.getScore() == null ? 0 : hit.getScore();
-        score += 3.0 * occurrences(hit.getTitle(), keyword);
-        Instant publishedAt = hit.getPublishedAt() == null
-                ? now : hit.getPublishedAt().toInstant(ZoneOffset.UTC);
-        double days = Math.max(0, Duration.between(publishedAt, now).toDays());
-        return score / (1.0 + days / 365.0);
-    }
-
-    private int occurrences(String text, String keyword) {
-        if (text == null || keyword == null || keyword.isEmpty()) {
-            return 0;
-        }
-        int count = 0;
-        int index = 0;
-        while ((index = text.indexOf(keyword, index)) >= 0) {
-            count++;
-            index += keyword.length();
-        }
-        return count;
-    }
-
     private ArticleDetailVO readCache(Article article) {
         try {
             String json = redis.opsForValue().get(cacheKey(article));
@@ -399,20 +360,6 @@ public class ArticleReadService {
      */
     private static String escapeLike(String value) {
         return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
-    }
-
-    /**
-     * BOOLEAN MODE 关键词清洗：剥离布尔操作符与引号，防 MySQL 1064 语法错误（公开搜索接口 500）。
-     */
-    static String sanitizeSearchKeyword(String keyword) {
-        if (keyword == null) {
-            return "";
-        }
-        String cleaned = keyword.replace("-", " ")
-                .replaceAll("[+*<>()~@\"]", " ")
-                .replace("'", " ")
-                .trim();
-        return cleaned.isBlank() ? "" : cleaned;
     }
 
     private TimeRange timeRange(Integer year, Integer month) {

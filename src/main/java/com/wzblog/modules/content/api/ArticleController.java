@@ -61,10 +61,9 @@ public class ArticleController {
             @RequestParam(required = false) String tagId,
             @RequestParam(required = false) Integer year,
             @RequestParam(required = false) Integer month,
-            @RequestParam(required = false) Boolean pinned,
             @RequestParam(required = false) String cursor,
             @RequestParam(required = false) Integer size) {
-        return Result.ok(readService.feed(keyword, categoryId, tagId, year, month, pinned, cursor, size));
+        return Result.ok(readService.feed(keyword, categoryId, tagId, year, month, cursor, size));
     }
 
     @GetMapping("/search")
