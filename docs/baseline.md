@@ -50,3 +50,7 @@
 | application-local.yml | 已入库（D16：禁止密钥，私密值走环境变量） |
 | 仓库脚本 | scripts/env.sh、mvn.sh、run.sh（正式，保留） |
 | 临时验证脚本 | /tmp/login.js、/tmp/t0xx_live.js、/tmp/close_console*.ps1（未入库，不入库） |
+
+## 前端仓库保护（T-017）
+
+前端仓库无 remote，2026-10-31 收口于 d403576，保护方式：本地 tag frontend-debug-close-20261031
