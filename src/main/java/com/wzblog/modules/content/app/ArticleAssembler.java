@@ -146,6 +146,7 @@ public class ArticleAssembler {
                 category(article, context), tags(article, context), author(article, context),
                 nz(article.getViewCount()), nz(article.getLikeCount()),
                 nz(article.getFavoriteCount()), nz(article.getCommentCount()),
+                article.getStatus(), article.getVisibility(),
                 Boolean.TRUE.equals(article.getIsPinned()), nz(article.getReadingSeconds()),
                 Times.toInstant(article.getPublishedAt()));
     }

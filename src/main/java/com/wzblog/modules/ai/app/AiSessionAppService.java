@@ -22,6 +22,7 @@ import com.wzblog.modules.ai.infra.redis.AiQuotaService;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import com.wzblog.modules.ai.infra.redis.GuestSessionStore;
 import com.wzblog.modules.ai.infra.util.Ulid;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -187,7 +188,9 @@ public class AiSessionAppService {
         long max = messageMapper.maxLatency(safeFrom, safeTo);
         long positive = feedbackMapper.countPositive(safeFrom, safeTo);
         long negative = feedbackMapper.countNegative(safeFrom, safeTo);
-        Long sessions = sessionMapper.selectCount(null);
+        Long sessions = sessionMapper.selectCount(new LambdaQueryWrapper<AiSession>()
+                .ge(AiSession::getCreatedAt, safeFrom)
+                .le(AiSession::getCreatedAt, safeTo));
         Double rate = positive + negative == 0 ? null
                 : (double) (positive - negative) / (positive + negative);
         return new AiAdminStatsVO(Times.toInstant(safeFrom), Times.toInstant(safeTo),

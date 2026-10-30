@@ -47,8 +47,13 @@ public class OperationsAppService {
                         .last("LIMIT " + pageSize + " OFFSET " + (page - 1) * pageSize));
     }
 
+    public long countBanners() {
+        return bannerMapper.selectCount(null);
+    }
+
     @Transactional
     public Banner createBanner(CurrentUser admin, Banner banner) {
+        requireBannerFields(banner);
         if (banner.getImageKey() != null && !banner.getImageKey().isBlank()) {
             fileReferencePort.claimByKey(banner.getImageKey().trim(), admin.id(), admin,
                     FileBizType.BANNER);
@@ -63,6 +68,7 @@ public class OperationsAppService {
 
     @Transactional
     public Banner updateBanner(CurrentUser admin, Long id, Banner request) {
+        requireBannerFields(request);
         Banner existing = requireBanner(id);
         String oldImage = existing.getImageKey();
         if (request.getImageKey() != null && !request.getImageKey().equals(oldImage)) {
@@ -115,6 +121,23 @@ public class OperationsAppService {
         return banner;
     }
 
+    /** 基础入参校验：image_key 为 NOT NULL，缺失/超长会直接 500，这里提前转 400。 */
+    private static void requireBannerFields(Banner banner) {
+        if (banner.getImageKey() == null || banner.getImageKey().isBlank()) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "轮播图片不能为空", null);
+        }
+        if (banner.getTitle() != null && banner.getTitle().length() > 100) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "轮播标题不能超过 100 字", null);
+        }
+        if (banner.getLinkUrl() != null && banner.getLinkUrl().length() > 500) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "跳转地址不能超过 500 字", null);
+        }
+        if (banner.getStatus() != null && !"ENABLED".equals(banner.getStatus())
+                && !"DISABLED".equals(banner.getStatus())) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "轮播状态取值非法", null);
+        }
+    }
+
     // ------------------------------------------------------------ 友链
 
     public List<FriendLink> activeFriendLinks() {
@@ -128,12 +151,13 @@ public class OperationsAppService {
                         .last("LIMIT " + pageSize + " OFFSET " + (page - 1) * pageSize));
     }
 
+    public long countFriendLinks() {
+        return friendLinkMapper.selectCount(null);
+    }
+
     @Transactional
     public FriendLink createFriendLink(CurrentUser admin, FriendLink link) {
-        if (link.getBlogName() == null || link.getBlogName().isBlank()
-                || link.getBlogUrl() == null || !link.getBlogUrl().startsWith("http")) {
-            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "友链参数非法", null);
-        }
+        requireFriendLinkFields(link);
         link.setId(null);
         link.setCreatedAt(Times.nowUtc());
         friendLinkMapper.insert(link);
@@ -144,10 +168,8 @@ public class OperationsAppService {
 
     @Transactional
     public FriendLink updateFriendLink(CurrentUser admin, Long id, FriendLink request) {
+        requireFriendLinkFields(request);
         FriendLink existing = requireFriendLink(id);
-        if (request.getBlogUrl() != null && !request.getBlogUrl().startsWith("http")) {
-            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "blogUrl 非法", null);
-        }
         existing.setBlogName(request.getBlogName());
         existing.setBlogUrl(request.getBlogUrl());
         existing.setTheme(request.getTheme());
@@ -188,6 +210,22 @@ public class OperationsAppService {
             throw new BusinessException(ErrorCode.COMMON_NOT_FOUND);
         }
         return link;
+    }
+
+    /** 基础入参校验：两列均为 NOT NULL，缺失/超长会直接 500，这里提前转 400。 */
+    private static void requireFriendLinkFields(FriendLink link) {
+        if (link.getBlogName() == null || link.getBlogName().isBlank()
+                || link.getBlogName().length() > 100) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "站点名不能为空且不超过 100 字", null);
+        }
+        if (link.getBlogUrl() == null || !link.getBlogUrl().startsWith("http")
+                || link.getBlogUrl().length() > 500) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "站点地址非法", null);
+        }
+        if (link.getStatus() != null && !"ENABLED".equals(link.getStatus())
+                && !"DISABLED".equals(link.getStatus())) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "友链状态取值非法", null);
+        }
     }
 
     private static String safe(String value) {

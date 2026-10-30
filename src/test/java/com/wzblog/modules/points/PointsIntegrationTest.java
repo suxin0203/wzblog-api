@@ -495,6 +495,49 @@ class PointsIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void titleUpdateExcludesSelfAndRejectsRealConflict() {
+        String name = "称号-" + unique("tu");
+        HttpResult created = post("/api/v1/admin/titles",
+                Map.of("name", name, "cssClass", "gold", "description", "初始", "sortOrder", 1),
+                adminToken());
+        assertThat(created.status()).isEqualTo(200);
+        long id = created.data().path("id").asLong();
+
+        // 不改名，只改描述/排序 → 200（查重必须排除自身）
+        HttpResult sameName = put("/api/v1/admin/titles/" + id,
+                Map.of("name", name, "cssClass", "gold", "description", "改描述", "sortOrder", 9),
+                adminToken());
+        assertThat(sameName.status()).isEqualTo(200);
+        assertThat(sameName.data().path("description").asText()).isEqualTo("改描述");
+        assertThat(sameName.data().path("sortOrder").asInt()).isEqualTo(9);
+
+        // 改成另一个在用称号的名字 → 409
+        String otherName = "称号-" + unique("tu");
+        HttpResult other = post("/api/v1/admin/titles",
+                Map.of("name", otherName, "description", "他人"), adminToken());
+        assertThat(other.status()).isEqualTo(200);
+        long otherId = other.data().path("id").asLong();
+        HttpResult conflict = put("/api/v1/admin/titles/" + otherId,
+                Map.of("name", name, "description", "撞名"), adminToken());
+        assertThat(conflict.status()).isEqualTo(409);
+        assertThat(conflict.code()).isEqualTo("TITLE_NAME_CONFLICT");
+    }
+
+    @Test
+    void softDeletedTitleNameStillConflictsOnCreate() {
+        String name = "称号-" + unique("td");
+        HttpResult created = post("/api/v1/admin/titles", Map.of("name", name), adminToken());
+        assertThat(created.status()).isEqualTo(200);
+        long id = created.data().path("id").asLong();
+        assertThat(delete("/api/v1/admin/titles/" + id, adminToken()).status()).isEqualTo(200);
+
+        // 现有语义：唯一索引包含软删行，预检查不可见，insert 冲突兜底为 409（本轮不改）
+        HttpResult again = post("/api/v1/admin/titles", Map.of("name", name), adminToken());
+        assertThat(again.status()).isEqualTo(409);
+        assertThat(again.code()).isEqualTo("TITLE_NAME_CONFLICT");
+    }
+
+    @Test
     void reconcileJobFixesBalanceDrift() {
         String username = unique("pr");
         register(username, PASSWORD, null);

@@ -36,8 +36,12 @@ public interface TitleMapper extends BaseMapper<Title> {
     Title selectByIdIncludeDeleted(@Param("id") Long id);
 
     @Select("""
-            SELECT id FROM titles WHERE name = #{name} AND (deleted_at IS NULL OR id != #{excludeId})
+            <script>
+            SELECT id FROM titles
+            WHERE name = #{name} AND deleted_at IS NULL
+            <if test="excludeId != null"> AND id != #{excludeId}</if>
             LIMIT 1
+            </script>
             """)
     Long selectIdByName(@Param("name") String name, @Param("excludeId") Long excludeId);
 

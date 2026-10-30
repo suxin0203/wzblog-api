@@ -5,6 +5,7 @@ import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.util.Times;
 import com.wzblog.common.web.ClientInfo;
 import com.wzblog.common.web.CurrentUser;
+import com.wzblog.modules.ai.api.dto.AiChatRequest;
 import com.wzblog.modules.ai.domain.AiMessage;
 import com.wzblog.modules.ai.domain.AiSession;
 import com.wzblog.modules.ai.infra.chat.ChatClient;
@@ -86,7 +87,8 @@ public class AiChatOrchestrator {
         if (!properties.isEnabled()) {
             throw new BusinessException(ErrorCode.AI_DISABLED);
         }
-        if (message == null || message.isBlank() || message.codePoints().count() > 500) {
+        if (message == null || message.isBlank()
+                || message.codePoints().count() > AiChatRequest.MAX_MESSAGE_CHARS) {
             throw new BusinessException(ErrorCode.AI_MESSAGE_TOO_LONG);
         }
         String question = message.trim();

@@ -227,9 +227,16 @@ class AiIntegrationTest extends IdentityTestSupport {
     @Test
     void messageTooLongRejected() {
         HttpResult result = post("/api/v1/ai/chat/stream",
-                Map.of("message", "长".repeat(501)), null);
+                Map.of("message", "长".repeat(601)), null);
         // 未经 SSE 提交前返回 JSON 400
         assertThat(result.status()).isEqualTo(400);
+    }
+
+    @Test
+    void messageAtLimitAccepted() {
+        SseResult result = chat(adminToken(), null, Map.of("message", "长".repeat(600)));
+        assertThat(result).isNotNull();
+        assertThat(result.events()).contains("session", "done").doesNotContain("error");
     }
 
     // ------------------------------------------------------------ 编辑辅助与后台

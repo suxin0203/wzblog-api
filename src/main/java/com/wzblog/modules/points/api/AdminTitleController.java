@@ -4,7 +4,6 @@ import com.wzblog.common.api.Result;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.points.api.dto.TitleUpsertRequest;
 import com.wzblog.modules.points.api.vo.AdminTitleVO;
-import com.wzblog.modules.points.api.vo.TitleVO;
 import com.wzblog.modules.points.app.TitleAppService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -41,15 +40,15 @@ public class AdminTitleController {
     }
 
     @PostMapping
-    public ResponseEntity<Result<TitleVO>> create(@AuthenticationPrincipal CurrentUser admin,
-                                                  @Valid @RequestBody TitleUpsertRequest request) {
+    public ResponseEntity<Result<AdminTitleVO>> create(@AuthenticationPrincipal CurrentUser admin,
+                                                       @Valid @RequestBody TitleUpsertRequest request) {
         return ResponseEntity.ok(Result.ok(titleAppService.create(admin, request)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Result<TitleVO>> update(@AuthenticationPrincipal CurrentUser admin,
-                                                  @PathVariable("id") Long id,
-                                                  @Valid @RequestBody TitleUpsertRequest request) {
+    public ResponseEntity<Result<AdminTitleVO>> update(@AuthenticationPrincipal CurrentUser admin,
+                                                       @PathVariable("id") Long id,
+                                                       @Valid @RequestBody TitleUpsertRequest request) {
         return ResponseEntity.ok(Result.ok(titleAppService.update(admin, id, request)));
     }
 

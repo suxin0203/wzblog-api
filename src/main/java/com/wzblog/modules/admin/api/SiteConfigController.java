@@ -1,6 +1,8 @@
 package com.wzblog.modules.admin.api;
 
 import com.wzblog.common.api.Result;
+import com.wzblog.common.error.BusinessException;
+import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.admin.app.SiteConfigAppService;
 import org.springframework.http.ResponseEntity;
@@ -44,7 +46,13 @@ public class SiteConfigController {
     public ResponseEntity<Result<Object>> update(@AuthenticationPrincipal CurrentUser admin,
                                                  @PathVariable("key") String key,
                                                  @RequestBody Map<String, String> body) {
-        siteConfigAppService.update(admin, key, body.get("value"));
+        String value = body.get("value");
+        if (value == null) {
+            // 缺 value 时不能按空串落库，否则会把配置静默清空
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR,
+                    "请求体缺少 value 字段", null);
+        }
+        siteConfigAppService.update(admin, key, value);
         return ResponseEntity.ok(Result.ok(null));
     }
 }

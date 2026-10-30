@@ -111,7 +111,7 @@ public class PointsQueryService {
         var result = pointsAppService.post(userId, PointsType.ADMIN_ADJUST, amount, "SYSTEM", null,
                 idempotencyKey, reason, operator.id());
         auditRecorder.record(operator, "POINTS_ADJUST", "USER", String.valueOf(userId),
-                null, "{\"amount\":" + result.balanceAfter() + ",\"reason\":\"" + safe(reason) + "\"}");
+                null, "{\"amount\":" + amount + ",\"reason\":\"" + safe(reason) + "\"}");
         eventPublisher.publishEvent(new PointsAdjustedEvent(result.ledgerId(), userId, amount,
                 result.balanceAfter(), reason));
         LedgerEntry entry = ledgerMapper.selectByIdempotencyKey(idempotencyKey);
