@@ -26,6 +26,12 @@ public class WechatProperties {
     /** 扫码会话 TTL（旧系统 5 分钟）。 */
     private int sessionTtlMinutes = 5;
 
+    /** 新契约（/auth/qr）会话 TTL 秒数（M8 设计 120s）。 */
+    private int qrSessionTtlSeconds = 120;
+
+    /** 新契约 loginTicket TTL 秒数（一次性，GETDEL 消费）。 */
+    private int ticketTtlSeconds = 60;
+
     /** bindToken TTL（旧系统 5 分钟）。 */
     private int bindTtlMinutes = 5;
 
@@ -93,6 +99,22 @@ public class WechatProperties {
 
     public void setSessionTtlMinutes(int sessionTtlMinutes) {
         this.sessionTtlMinutes = sessionTtlMinutes;
+    }
+
+    public int getQrSessionTtlSeconds() {
+        return qrSessionTtlSeconds;
+    }
+
+    public void setQrSessionTtlSeconds(int qrSessionTtlSeconds) {
+        this.qrSessionTtlSeconds = qrSessionTtlSeconds;
+    }
+
+    public int getTicketTtlSeconds() {
+        return ticketTtlSeconds;
+    }
+
+    public void setTicketTtlSeconds(int ticketTtlSeconds) {
+        this.ticketTtlSeconds = ticketTtlSeconds;
     }
 
     public int getBindTtlMinutes() {

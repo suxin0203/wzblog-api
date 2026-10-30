@@ -90,7 +90,10 @@ public class SecurityConfig {
             "/api/v1/auth/register",
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
-            "/api/v1/auth/password/forgot/**"
+            "/api/v1/auth/password/forgot/**",
+            // M8 新契约：微信 code 登录与 PC 扫码会话（confirm 的 JWT/bindToken 鉴权在应用层）
+            "/api/v1/auth/wechat/login",
+            "/api/v1/auth/qr/**"
     };
 
     @Bean

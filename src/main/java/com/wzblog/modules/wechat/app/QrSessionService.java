@@ -4,6 +4,7 @@ import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.ratelimit.SlidingWindowRateLimiter;
 import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.util.Times;
+import com.wzblog.common.web.ClientInfo;
 import com.wzblog.modules.identity.app.WechatIdentityFacade;
 import com.wzblog.modules.wechat.domain.QrSession;
 import com.wzblog.modules.wechat.infra.config.WechatProperties;
@@ -302,6 +303,245 @@ public class QrSessionService {
         int expired = sessionMapper.expireBatch(Times.nowUtc());
         if (expired > 0) {
             log.info("扫码会话清理：{} 条置 EXPIRED", expired);
+        }
+    }
+
+    // ------------------------------------------------------------ 新契约 /auth/qr（M8 设计 §3/§8/§9：PC 前端与小程序 v2）
+
+    private static final String TICKET_PREFIX = "wzblog:wechat:qr:ticket:";
+    private static final String TICKET_BY_SCENE_PREFIX = "wzblog:wechat:qr:ticket-by-scene:";
+
+    /**
+     * 新契约创建会话：TTL 由 qr-session-ttl-seconds（默认 120s）控制；
+     * 码图不随创建返回，由 GET /auth/qr/sessions/{sceneId}/code 单独取（响应壳显式例外）。
+     */
+    public QrCreated openQrSession(String clientIp, String userAgent) {
+        requireRate("qr-create-v1", clientIp, 10, 60);
+        LocalDateTime now = Times.nowUtc();
+        LocalDateTime expiresAt = now.plusSeconds(properties.getQrSessionTtlSeconds());
+        String sceneId = uniqueSceneId();
+        QrSession session = new QrSession();
+        session.setSceneId(sceneId);
+        session.setStatus(QrSession.PENDING);
+        session.setClientIp(clientIp);
+        session.setUserAgent(truncate(userAgent, 255));
+        session.setExpiresAt(expiresAt);
+        session.setCreatedAt(now);
+        sessionMapper.insert(session);
+        cacheStatus(sceneId, QrSession.PENDING, expiresAt);
+        return new QrCreated(sceneId, expiresAt);
+    }
+
+    public record QrCreated(String sceneId, LocalDateTime expiresAt) {
+    }
+
+    /**
+     * 新契约轮询：只读状态；CONFIRMED 附带 ticket（不消费，PC 换票用）。
+     * 禁止在本接口签发 Token（M8 §8：PC 唯一取 Token 入口是 /auth/qr/tickets/exchange）。
+     * 限流 1 次/秒 per scene+ip（超出 COMMON_RATE_LIMITED，带 Retry-After）。
+     */
+    public QrStatus pollQrStatus(String sceneId, String clientIp) {
+        requireRate("qr-poll-v1", sceneId + ":" + clientIp, 1, 1);
+        QrSession session = requireSession(sceneId);
+        LocalDateTime now = Times.nowUtc();
+        if (session.getExpiresAt().isBefore(now) || QrSession.EXPIRED.equals(session.getStatus())) {
+            sessionMapper.expireIfDue(sceneId, now);
+            evictStatus(sceneId);
+            return new QrStatus(sceneId, "EXPIRED", null, null);
+        }
+        return switch (session.getStatus()) {
+            case QrSession.PENDING -> new QrStatus(sceneId, "PENDING", null, session.getExpiresAt());
+            case QrSession.CONFIRMED -> new QrStatus(sceneId, "CONFIRMED",
+                    redis.opsForValue().get(TICKET_BY_SCENE_PREFIX + sceneId), null);
+            default -> new QrStatus(sceneId, "COMPLETED", null, null);
+        };
+    }
+
+    /** 轮询状态视图；仅 CONFIRMED 返回 ticket，COMPLETED/EXPIRED 恒为 null。 */
+    public record QrStatus(String sceneId, String status, String ticket, LocalDateTime expiresAt) {
+    }
+
+    /**
+     * 新契约确认（小程序端）：登录态（JWT userId）或 bindToken 二选一，二者皆无 → 401。
+     * JWT 路径把绑定 openid 写入 temp_openid；bindToken 路径以 temp_openid 登录/建号。
+     * 成功：条件更新单胜置 CONFIRMED，放 60s 一次性 ticket，并下发本轮 bindToken（60s）。
+     */
+    @Transactional
+    public QrConfirm confirmQrSession(String sceneId, String bindToken, Long jwtUserId) {
+        QrSession session = requireSession(sceneId);
+        LocalDateTime now = Times.nowUtc();
+        Long userId;
+        String openid;
+        if (jwtUserId != null) {
+            var view = identityFacade.userView(jwtUserId);
+            if (view == null) {
+                throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+            }
+            if (!"ACTIVE".equals(view.status())) {
+                throw new BusinessException(ErrorCode.AUTH_ACCOUNT_DISABLED);
+            }
+            userId = jwtUserId;
+            openid = identityFacade.openidOf(jwtUserId);
+        } else if (bindToken != null && !bindToken.isBlank()) {
+            requireValidBindToken(session, bindToken, now);
+            openid = session.getTempOpenid();
+            if (openid == null || openid.isBlank()) {
+                throw new BusinessException(ErrorCode.WECHAT_BIND_TOKEN_INVALID);
+            }
+            var login = identityFacade.loginOrCreate(openid, null);
+            if (!login.active()) {
+                throw new BusinessException(ErrorCode.AUTH_ACCOUNT_DISABLED);
+            }
+            userId = login.userId();
+        } else {
+            throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+        }
+        String newBindToken = randomToken();
+        LocalDateTime bindExpiresAt = now.plusSeconds(properties.getTicketTtlSeconds());
+        if (sessionMapper.confirmWithBind(sceneId, userId, openid,
+                sha256Hex(newBindToken), bindExpiresAt, now) == 0) {
+            QrSession latest = sessionMapper.selectBySceneId(sceneId);
+            boolean expired = latest == null || latest.getExpiresAt().isBefore(now)
+                    || QrSession.EXPIRED.equals(latest.getStatus());
+            throw new BusinessException(expired
+                    ? ErrorCode.WECHAT_QR_EXPIRED : ErrorCode.WECHAT_QR_ALREADY_CONFIRMED);
+        }
+        evictStatus(sceneId);
+        issueTicket(sceneId);
+        redis.opsForValue().set("wzblog:wechat:qr:bind:" + sha256Hex(newBindToken), sceneId,
+                Duration.ofSeconds(properties.getTicketTtlSeconds()));
+        return new QrConfirm(sceneId, QrSession.CONFIRMED, newBindToken, bindExpiresAt);
+    }
+
+    /**
+     * 新契约注册并确认：bindToken 消费 → M1 建正式账号（source=QR）→（重）确认 + 放新 ticket。
+     * 允许在 PENDING / CONFIRMED 会话上重确认（confirm(JWT) 先行确认自动账号后再转正的流程）；
+     * 用户名冲突时 M1 先抛异常，bindToken 不被消费（M8 §11 / TC-026，可重试）。
+     */
+    @Transactional
+    public QrConfirm registerAndConfirm(String sceneId, String bindToken, String username,
+                                        String password, String nickname) {
+        QrSession session = requireSession(sceneId);
+        requireActive(session);
+        String openid = session.getTempOpenid();
+        if (openid == null || openid.isBlank()) {
+            throw new BusinessException(ErrorCode.WECHAT_BIND_TOKEN_INVALID);
+        }
+        // 顺序（M8 §11）：先校验 bindToken（不消费）→ M1 建号 → 消费；无效 token 不产生任何账号
+        requireValidBindToken(session, bindToken, Times.nowUtc());
+        Long userId = identityFacade.registerAndBind(username, password, nickname, openid, null);
+        consumeBindToken(sceneId, bindToken);
+        reconfirmAndIssueTicket(sceneId, userId);
+        return new QrConfirm(sceneId, QrSession.CONFIRMED, null, null);
+    }
+
+    /**
+     * 新契约绑定并确认：绑定到当前登录用户（不接收账号密码，不切换登录账号）
+     * →（重）确认 + 放新 ticket。
+     */
+    @Transactional
+    public QrConfirm bindAndConfirm(String sceneId, String bindToken, Long currentUserId) {
+        if (currentUserId == null) {
+            throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+        }
+        QrSession session = requireSession(sceneId);
+        requireActive(session);
+        String openid = session.getTempOpenid();
+        if (openid == null || openid.isBlank()) {
+            throw new BusinessException(ErrorCode.WECHAT_BIND_TOKEN_INVALID);
+        }
+        requireValidBindToken(session, bindToken, Times.nowUtc());
+        identityFacade.bind(currentUserId, openid, null);
+        consumeBindToken(sceneId, bindToken);
+        reconfirmAndIssueTicket(sceneId, currentUserId);
+        return new QrConfirm(sceneId, QrSession.CONFIRMED, null, null);
+    }
+
+    /**
+     * 新契约换票（PC 唯一取 Token 入口）：GETDEL 原子消费（先删，任何后续失败都不可重放）
+     * → 校验用户 ACTIVE → CONFIRMED→COMPLETED 条件更新 → 签发双 Token。
+     */
+    public QrExchange exchangeTicket(String ticket, ClientInfo client) {
+        if (ticket == null || ticket.isBlank()) {
+            throw new BusinessException(ErrorCode.WECHAT_TICKET_INVALID);
+        }
+        String key = TICKET_PREFIX + ticket.trim();
+        String sceneId = redis.opsForValue().getAndDelete(key);
+        if (sceneId == null) {
+            throw new BusinessException(ErrorCode.WECHAT_TICKET_INVALID);
+        }
+        QrSession session = requireSession(sceneId);
+        Long userId = session.getUserId();
+        if (!QrSession.CONFIRMED.equals(session.getStatus()) || userId == null) {
+            throw new BusinessException(ErrorCode.WECHAT_TICKET_INVALID);
+        }
+        var view = identityFacade.userView(userId);
+        if (view == null) {
+            throw new BusinessException(ErrorCode.WECHAT_TICKET_INVALID);
+        }
+        if (!"ACTIVE".equals(view.status())) {
+            throw new BusinessException(ErrorCode.AUTH_ACCOUNT_DISABLED);
+        }
+        if (sessionMapper.complete(sceneId, Times.nowUtc()) == 0) {
+            throw new BusinessException(ErrorCode.WECHAT_TICKET_INVALID); // 已 COMPLETED，二次兑换
+        }
+        evictStatus(sceneId);
+        redis.delete(TICKET_BY_SCENE_PREFIX + sceneId);
+        return new QrExchange(identityFacade.issueTokens(userId, client), view);
+    }
+
+    /** 换票结果：双 Token + 用户简版视图（与 login 响应结构对齐）。 */
+    public record QrExchange(WechatIdentityFacade.IssuedTokens tokens,
+                             WechatIdentityFacade.WechatUserView user) {
+    }
+
+    /** 确认结果视图；仅 confirm 下发 bindToken（60s 一次性），register/bind-and-confirm 恒为 null。 */
+    public record QrConfirm(String sceneId, String status, String bindToken,
+                            LocalDateTime bindTokenExpiresAt) {
+    }
+
+    private void issueTicket(String sceneId) {
+        String ticket = randomToken();
+        Duration ttl = Duration.ofSeconds(properties.getTicketTtlSeconds());
+        redis.opsForValue().set(TICKET_PREFIX + ticket, sceneId, ttl);
+        redis.opsForValue().set(TICKET_BY_SCENE_PREFIX + sceneId, ticket, ttl);
+    }
+
+    /** 重确认（PENDING/CONFIRMED 均可）：作废旧 ticket 后放新 ticket，避免旧身份的票仍可兑换。 */
+    private void reconfirmAndIssueTicket(String sceneId, Long userId) {
+        if (sessionMapper.reconfirm(sceneId, userId, Times.nowUtc()) == 0) {
+            QrSession latest = sessionMapper.selectBySceneId(sceneId);
+            boolean expired = latest == null || QrSession.EXPIRED.equals(latest.getStatus())
+                    || latest.getExpiresAt().isBefore(Times.nowUtc());
+            throw new BusinessException(expired
+                    ? ErrorCode.WECHAT_QR_EXPIRED : ErrorCode.WECHAT_QR_ALREADY_CONFIRMED);
+        }
+        evictStatus(sceneId);
+        String oldTicket = redis.opsForValue().get(TICKET_BY_SCENE_PREFIX + sceneId);
+        if (oldTicket != null) {
+            redis.delete(TICKET_PREFIX + oldTicket);
+        }
+        issueTicket(sceneId);
+    }
+
+    private void requireActive(QrSession session) {
+        if (session.getExpiresAt().isBefore(Times.nowUtc())
+                || QrSession.EXPIRED.equals(session.getStatus())) {
+            throw new BusinessException(ErrorCode.WECHAT_QR_EXPIRED);
+        }
+        if (QrSession.COMPLETED.equals(session.getStatus())) {
+            throw new BusinessException(ErrorCode.WECHAT_QR_ALREADY_CONFIRMED);
+        }
+    }
+
+    /** bindToken 校验（不消费）：DB 哈希 + 有效期；消费统一走 consumeBindToken。 */
+    private void requireValidBindToken(QrSession session, String bindToken, LocalDateTime now) {
+        String hash = sha256Hex(bindToken);
+        boolean ok = hash.equals(session.getBindTokenHash())
+                && session.getBindExpiresAt() != null
+                && session.getBindExpiresAt().isAfter(now);
+        if (!ok) {
+            throw new BusinessException(ErrorCode.WECHAT_BIND_TOKEN_INVALID);
         }
     }
 

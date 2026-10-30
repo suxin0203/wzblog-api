@@ -44,6 +44,28 @@ public class WechatIdentityService {
     public record WechatIdentity(Long userId, UserStatus status, boolean created) {
     }
 
+    /** 用户简版视图（纯类型，openid 明文永不外泄，只暴露"是否已绑定"）。 */
+    public record WechatUserView(Long id, String username, String nickname, String avatarKey,
+                                 String role, String status, boolean openidBound) {
+    }
+
+    /** 用户简版视图查询；用户不存在或已注销返回 null。 */
+    public WechatUserView viewOf(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null || user.isDeleted()) {
+            return null;
+        }
+        return new WechatUserView(user.getId(), user.getUsername(), user.getNickname(),
+                user.getAvatarKey(), user.getRole().name(), user.getStatus().name(),
+                user.getOpenid() != null);
+    }
+
+    /** 查询用户绑定的 openid（模块内部流转用，禁止写入日志/响应）。 */
+    public String openidOf(Long userId) {
+        User user = userMapper.selectById(userId);
+        return user == null || user.isDeleted() ? null : user.getOpenid();
+    }
+
     /**
      * 按 openid 登录；不存在则创建正式 USER（source=WECHAT，随机用户名/密码）。
      * 并发下的 uk_openid 冲突由唯一键兜底：捕获后回查走登录分支，不产生双账号。

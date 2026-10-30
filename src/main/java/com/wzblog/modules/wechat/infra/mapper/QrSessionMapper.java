@@ -40,6 +40,23 @@ public interface QrSessionMapper extends BaseMapper<QrSession> {
     int confirm(@Param("sceneId") String sceneId, @Param("userId") Long userId,
                 @Param("now") LocalDateTime now);
 
+    /**
+     * 新契约确认：PENDING → CONFIRMED，一次条件更新同时写入 user_id、temp_openid
+     * 与本轮下发的 bindToken 哈希（并发单胜，抢到者才放 ticket）。
+     */
+    @Update("""
+            UPDATE wechat_qr_sessions
+            SET status = 'CONFIRMED', user_id = #{userId}, temp_openid = #{tempOpenid},
+                bind_token_hash = #{bindTokenHash}, bind_expires_at = #{bindExpiresAt},
+                updated_at = #{now}
+            WHERE scene_id = #{sceneId} AND status = 'PENDING' AND expires_at > #{now}
+            """)
+    int confirmWithBind(@Param("sceneId") String sceneId, @Param("userId") Long userId,
+                        @Param("tempOpenid") String tempOpenid,
+                        @Param("bindTokenHash") String bindTokenHash,
+                        @Param("bindExpiresAt") LocalDateTime bindExpiresAt,
+                        @Param("now") LocalDateTime now);
+
     /** 兑换完成：CONFIRMED → COMPLETED（仅一次）。 */
     @Update("""
             UPDATE wechat_qr_sessions
@@ -47,6 +64,19 @@ public interface QrSessionMapper extends BaseMapper<QrSession> {
             WHERE scene_id = #{sceneId} AND status = 'CONFIRMED'
             """)
     int complete(@Param("sceneId") String sceneId, @Param("now") LocalDateTime now);
+
+    /**
+     * 新契约重确认（register/bind-and-confirm）：允许在 PENDING 或 CONFIRMED 会话上
+     * 覆盖 user_id（M8 TC-026：用户名冲突后"会话仍 CONFIRMED 可重试"）；COMPLETED/过期不允许。
+     */
+    @Update("""
+            UPDATE wechat_qr_sessions
+            SET status = 'CONFIRMED', user_id = #{userId}, updated_at = #{now}
+            WHERE scene_id = #{sceneId} AND status IN ('PENDING', 'CONFIRMED')
+              AND expires_at > #{now}
+            """)
+    int reconfirm(@Param("sceneId") String sceneId, @Param("userId") Long userId,
+                  @Param("now") LocalDateTime now);
 
     /** 懒过期：pending/confirmed 且超时 → EXPIRED。 */
     @Update("""
