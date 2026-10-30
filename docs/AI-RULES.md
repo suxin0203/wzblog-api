@@ -1,14 +1,15 @@
-﻿# AI-RULES｜本项目 AI 协作规范（Skill 入口）
+# AI-RULES｜本项目 AI 协作规范（Skill 入口）
 
 > **触发方式**：任何改代码 / 查问题 / 改文档 / 修数据的请求，先 `@docs/AI-RULES.md` 关联本文件，再描述需求。
 > **本文件地位**：工程协作约定。与业务口径冲突 → 以 `docs/decisions.md` 为准；与代码冲突 → 以「代码 + 测试」为准，并回报差异。
-> **版本**：v2.0 ｜ 2026-10-31 ｜ 基线 commit `92ac72c` ｜ 维护人：项目负责人
+> **版本**：v2.1 ｜ 2026-10-31 ｜ 基线 commit `e0a0c00` ｜ 维护人：项目负责人
 
 ---
 
 ## 目录
 
 - [0. 开工前 30 秒](#0-开工前-30-秒)
+- [0.5 路径地图（改文件前先定位）](#05-路径地图改文件前先定位不许猜路径)
 - [1. 项目事实](#1-项目事实不许猜以此为准)
 - [2. 三条最高原则 + 三档严格度](#2-三条最高原则--三档严格度)
 - [3. 任务分类与决策树](#3-任务分类与决策树)
@@ -32,10 +33,73 @@
 | 顺序 | 动作 | 目的 |
 | --- | --- | --- |
 | 1 | 读 `docs/README.md` | 分清权威文档与历史归档（`archive/` 一律不作为依据） |
-| 2 | **grep `docs/decisions.md` 关键词** | 口径台账已有 D1–D96 结论，禁止重新发明 |
+| 2 | **grep `docs/decisions.md` 关键词** | 口径台账已有 D1–D98 结论，禁止重新发明 |
 | 3 | 读 `docs/backlog.md` | B01–B16 是已知未修项，不要当新发现汇报 |
 | 4 | 环境自检（见 §9.1） | health 200 才开工；Docker 掉过不止一次 |
 | 5 | 判断任务类型（§3） | 类型错了，方法全错 |
+
+---
+
+## 0.5 路径地图（改文件前先定位，不许猜路径）
+
+### 两个仓库的绝对位置：同级兄弟目录，互不包含
+
+| 仓库 | 绝对路径 | 说明 |
+| --- | --- | --- |
+| 后端 | `E:\MyCodeProject\Java\文栈博客后端AI重构数据库版本` | Spring Boot，端口 8021 |
+| 前端 | `E:\MyCodeProject\Java\wzblog-frontend` | Vue 3 + Vite，端口 5173 |
+| 备份/归档 | `E:\MyCodeProject\Java\backup` | 数据库备份、文档归档 zip（**不属于任何仓库**） |
+
+> **前端不在后端目录里。** 改后端时工作目录是 `文栈博客后端AI重构数据库版本`，改前端时是 `wzblog-frontend`，两者不能混用同一路径。
+
+### 后端：改什么 → 去哪个包
+
+| 你要改的东西 | 目录（相对 `src/main/java/com/wzblog/`） | 典型文件 |
+| --- | --- | --- |
+| 文章 / 列表 / 搜索 / 归档 / 置顶 | `modules/content/` | `api/ArticleController.java`、`app/ArticleReadService.java`、`infra/ArticleMapper.xml` |
+| 评论 / 留言 / 通知(SSE) | `modules/interaction/` | `api/CommentController.java`、`api/GuestbookController.java`、`api/NotificationController.java` |
+| 积分 / 调分 / 订单 | `modules/points/` | `api/AdminPointsController.java`、`app/PointsQueryService.java` |
+| 上传 / 文件 | `modules/media/` | `api/FileController.java`、`app/FileAppService.java` |
+| AI 对话 / 统计 | `modules/ai/` | `api/AiChatController.java`、`app/AiChatOrchestrator.java`、`app/AiSessionAppService.java` |
+| 后台运营（轮播/友链/称号/站点配置） | `modules/admin/` | `api/OperationsController.java`、`api/AdminTitleController.java`、`app/OperationsAppService.java` |
+| 登录 / 用户 / 权限 | `modules/identity/` + `config/` | `config/SecurityConfig.java`、`common/security/` |
+| 小程序旧协议（**别动**） | `modules/wechat/` | 兼容层：HTTP 200 + 数字 code |
+| 统一响应 / 异常 / 错误码 | `common/api/`、`common/error/` | `Result.java`、`GlobalExceptionHandler.java`、`ErrorCode.java` |
+| 请求 DTO（校验注解在这） | 各模块 `api/` | `*Request.java`、`*UpsertRequest.java` |
+| SQL | 各模块 `infra/*.xml` | 改查询优先看 XML，不要只改注解 |
+| 数据库迁移 | `db/migration/V*.sql` | **只能新增，禁改已执行的历史脚本** |
+| 配置 | `src/main/resources/application.yml`、`application-local.yml` | local 里**禁止写密钥/口令** |
+
+### 前端：改什么 → 文件在哪（根目录 `E:\MyCodeProject\Java\wzblog-frontend`）
+
+| 你要改的东西 | 路径 |
+| --- | --- |
+| 接口调用 | `src/api/*.ts`（按域拆分，清单见下） |
+| 页面 | `src/views/`（前台浏览端与后台管理端混放，靠文件名区分） |
+| 组件 | `src/components/` |
+| 状态 | `src/store/`（Pinia） |
+| 路由与守卫 | `src/router/`、`src/router/guards.ts` |
+| 时间处理（**唯一入口**） | `src/utils/datetime.ts` |
+| 类型定义 | `src/types/` |
+| SSE / hooks | `src/hooks/`（`useNotificationStream.ts`） |
+
+`src/api/` 文件清单：`article.ts`、`comment.ts`、`guestbook.ts`、`aiChat.ts`、`auth.ts`、`user.ts`、`notification.ts`、`points.ts`、`adminPoints.ts`、`operation.ts`、`category.ts`、`tag.ts`、`dashboard.ts`、`upload.ts`、`system.ts`、`reaction.ts`
+
+### 关键锚点（高频改动直接去这几处）
+
+| 需求 | 后端 | 前端 |
+| --- | --- | --- |
+| 列表返回字段变了 | `content/domain/ArticleListItemVO.java` + `ArticleAssembler.java` | `src/types/article.ts` + `src/views/ArticleListView.vue` |
+| 校验上限变了 | `*/api/*Request.java` + 对应 `app/*Service.java` | 表单 `maxlength` 与错误提示 |
+| 时间筛选 / 投放期 | mapper XML 的 `>= from AND < to` | 调 `toUtcRangeEnd` / `toUtcInstantEnd` |
+| 错误码 / 文案 | `common/error/ErrorCode.java` | 按 `code` 分支的地方 |
+| 置顶展示 | `/articles/pinned` + `ArticleMapper.selectPinned` | `ArticleListView.vue` 顶部置顶区 |
+
+### 一条铁律
+
+> **不确定文件在哪，先 grep 类名/方法名/接口名，不要凭猜猜路径。**
+> `grep -rn "class ArticleController" src/main/java` ／ `grep -rn "getArticleFeed" src/`
+> 猜错路径 = 改错文件，这是最难发现的一类错误。
 
 ---
 
