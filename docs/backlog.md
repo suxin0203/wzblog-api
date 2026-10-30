@@ -24,4 +24,4 @@
 
 | 编号 | 标题 | 级别 | 现象 | 影响面 | 触发条件 | 规避 | 建议方向 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| B16 | AI 统计 sessions 含软删会话 | **P1** | stats.sessions=18，列表 total=17；统计未排除 deleted_at | AI 后台看板可信度 | 存在软删会话（当前 1 条） | 无 | 统计条件补 deleted_at IS NULL，并补一致性用例 |
+| B16 | AI 统计 sessions 含软删会话 | P1 → **FIXED（dabf21b）** | stats.sessions=18，列表 total=17；统计未排除 deleted_at | AI 后台看板可信度 | 存在软删会话（当前 1 条） | 已修复：统计侧统一排除软删 | 已补一致性用例 |
