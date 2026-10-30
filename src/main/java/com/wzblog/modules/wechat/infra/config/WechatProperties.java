@@ -45,6 +45,18 @@ public class WechatProperties {
         return appId != null && !appId.isBlank() && appSecret != null && !appSecret.isBlank();
     }
 
+    /**
+     * 微信功能是否可用（docs/16 §4：凭据缺失 → 模块关闭，503 WECHAT_NOT_ENABLED，密码登录不受影响）。
+     * 显式 provider=mock 为本地/测试确定性上游，放行；auto/real 必须凭据齐备，
+     * 否则生产忘配凭据会静默走 Mock——假 code 可登录建号，属 P1 安全隐患。
+     */
+    public boolean isWechatEnabled() {
+        if ("mock".equalsIgnoreCase(provider)) {
+            return true;
+        }
+        return credentialsPresent();
+    }
+
     /** provider=auto：凭据齐备走 real，否则 mock（本地/CI 无凭据环境全链路仍可用）。 */
     public String effectiveProvider() {
         if ("auto".equalsIgnoreCase(provider)) {

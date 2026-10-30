@@ -78,6 +78,7 @@ public class LegacyWechatCompatController {
                                         HttpServletRequest request) {
         // 旧协议 openid 即登录：限流是协议不可改前提下唯一的缓解
         qrSessions.requireRate("userinfo", ClientInfo.from(request).ip(), 30, 60);
+        codeService.requireEnabled(); // 模块关闭（无凭据且非显式 mock）→ 503 壳
         var user = legacyAuth.userByOpenid(openid);
         if (user == null) {
             return LegacyResponses.fail(0, "用户不存在");

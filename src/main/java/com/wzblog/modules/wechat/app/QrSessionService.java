@@ -236,6 +236,7 @@ public class QrSessionService {
 
     /** 码 PNG：Redis 缓存（与会话同 TTL，含版本号入键），未命中调上游。 */
     public byte[] qrCodePng(String sceneId, String envVersion) {
+        requireEnabled();
         String version = envVersion == null || envVersion.isBlank()
                 ? properties.getEnvVersion() : envVersion;
         String key = QR_PNG_PREFIX + sceneId + ":" + version;
@@ -316,6 +317,7 @@ public class QrSessionService {
      * 码图不随创建返回，由 GET /auth/qr/sessions/{sceneId}/code 单独取（响应壳显式例外）。
      */
     public QrCreated openQrSession(String clientIp, String userAgent) {
+        requireEnabled();
         requireRate("qr-create-v1", clientIp, 10, 60);
         LocalDateTime now = Times.nowUtc();
         LocalDateTime expiresAt = now.plusSeconds(properties.getQrSessionTtlSeconds());
@@ -546,6 +548,13 @@ public class QrSessionService {
     }
 
     // ------------------------------------------------------------ 内部
+
+    /** 模块关闭（无凭据且非显式 mock）：503（docs/16 §4，密码登录不受影响）。 */
+    private void requireEnabled() {
+        if (!properties.isWechatEnabled()) {
+            throw new BusinessException(ErrorCode.WECHAT_NOT_ENABLED);
+        }
+    }
 
     /** 旧协议路径频控（无鉴权接口的第一道防线）。 */
     public void requireRate(String scene, String ip, int limit, int windowSeconds) {

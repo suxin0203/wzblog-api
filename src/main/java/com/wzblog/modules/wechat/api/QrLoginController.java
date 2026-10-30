@@ -97,7 +97,7 @@ public class QrLoginController {
     public ResponseEntity<byte[]> code(@PathVariable("sceneId") String sceneId,
                                        @RequestParam(value = "env_version", required = false) String envVersion) {
         qrSessions.requireSession(sceneId); // 404 JSON 错误体
-        byte[] png = qrSessions.qrCodePng(sceneId, envVersion);
+        byte[] png = qrSessions.qrCodePng(sceneId, normalizeEnvVersion(envVersion));
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_PNG)
                 .cacheControl(CacheControl.noStore())
@@ -165,6 +165,17 @@ public class QrLoginController {
     private static QrConfirmVO toConfirmVO(QrSessionService.QrConfirm result) {
         return new QrConfirmVO(result.sceneId(), result.status(), result.bindToken(),
                 result.bindTokenExpiresAt());
+    }
+
+    /** env_version 白名单（M8 v2 §0-3）：release/trial/develop 之外的取值回落默认配置。 */
+    private static String normalizeEnvVersion(String envVersion) {
+        if (envVersion == null) {
+            return null;
+        }
+        return switch (envVersion) {
+            case "release", "trial", "develop" -> envVersion;
+            default -> null;
+        };
     }
 
     private static String trimToNull(String value) {

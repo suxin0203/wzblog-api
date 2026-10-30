@@ -66,6 +66,20 @@ class WechatQrIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void wechatLoginRejectsDisabledAccount() {
+        String code = "v1-dis-" + unique("c");
+        var first = post("/api/v1/auth/wechat/login", Map.of("code", code), null);
+        assertThat(first.code()).isEqualTo("OK");
+        String userId = first.data().path("user").path("id").asText();
+
+        // 停用账号后再登录 → 403 AUTH_ACCOUNT_DISABLED，不签发 Token（M8 TC-003）
+        jdbc.update("UPDATE users SET status = 'DISABLED' WHERE id = ?", Long.valueOf(userId));
+        var second = post("/api/v1/auth/wechat/login", Map.of("code", code), null);
+        assertThat(second.status()).isEqualTo(403);
+        assertThat(second.code()).isEqualTo("AUTH_ACCOUNT_DISABLED");
+    }
+
+    @Test
     void wechatBindRequiresLoginAndIsIdempotent() {
         String code = "v1-bind-" + unique("c");
         String accessToken = wechatLogin(code);
