@@ -14,9 +14,11 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -227,9 +229,26 @@ class AiIntegrationTest extends IdentityTestSupport {
     @Test
     void messageTooLongRejected() {
         HttpResult result = post("/api/v1/ai/chat/stream",
-                Map.of("message", "长".repeat(501)), null);
+                Map.of("message", "长".repeat(601)), null);
         // 未经 SSE 提交前返回 JSON 400
         assertThat(result.status()).isEqualTo(400);
+        assertThat(result.code()).isEqualTo("AI_MESSAGE_TOO_LONG");
+    }
+
+    @Test
+    void messageOverHardLimitFallsBackToCommonValidation() {
+        HttpResult result = post("/api/v1/ai/chat/stream",
+                Map.of("message", "长".repeat(6001)), null);
+        assertThat(result.status()).isEqualTo(400);
+        assertThat(result.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(result.data().path("errors").path("message").asText()).isNotBlank();
+    }
+
+    @Test
+    void messageAtLimitAccepted() {
+        SseResult result = chat(adminToken(), null, Map.of("message", "长".repeat(600)));
+        assertThat(result).isNotNull();
+        assertThat(result.events()).contains("session", "done").doesNotContain("error");
     }
 
     // ------------------------------------------------------------ 编辑辅助与后台
@@ -272,6 +291,125 @@ class AiIntegrationTest extends IdentityTestSupport {
                 .status()).isEqualTo(403);
         assertThat(post("/api/v1/articles/" + articleId + "/ai/tags", Map.of(), editorToken)
                 .status()).isEqualTo(403);
+    }
+
+    @Test
+    void statsRangeUsesUtcBoundaries() {
+        LocalDateTime base = LocalDateTime.of(2030, 1, 1, 0, 0, 0);
+        insertSession(base.minusSeconds(1));
+        insertSession(base);
+        insertSession(base.plusSeconds(9));
+        insertSession(base.plusSeconds(10));
+
+        HttpResult stats = get("/api/v1/admin/ai/stats?from=2030-01-01T00:00:00"
+                + "&to=2030-01-01T00:00:10", adminToken());
+        assertThat(stats.status()).isEqualTo(200);
+        // D41：sessions 与列表同口径（last_message_at），半开 [from, to)：含 base、base+9s
+        assertThat(stats.data().path("sessions").asLong()).isEqualTo(2L);
+    }
+
+    @Test
+    void statsSessionsUseLastMessageAtAndExcludeToSecond() {
+        LocalDateTime base = LocalDateTime.of(2030, 2, 1, 0, 0, 0);
+        // created_at 与 last_message_at 故意错开：若仍按 created_at 统计，结果会变成 3
+        insertSessionAt(base.plusSeconds(30), base.minusSeconds(1));  // last 早于 from → 不计
+        insertSessionAt(base.minusSeconds(30), base);                  // last = from → 计
+        insertSessionAt(base.minusSeconds(30), base.plusSeconds(9));   // 计
+        insertSessionAt(base.minusSeconds(30), base.plusSeconds(10));  // last = to → 不计
+
+        HttpResult stats = get("/api/v1/admin/ai/stats?from=2030-02-01T00:00:00"
+                + "&to=2030-02-01T00:00:10", adminToken());
+        assertThat(stats.status()).isEqualTo(200);
+        assertThat(stats.data().path("sessions").asLong()).isEqualTo(2L);
+
+        HttpResult list = get("/api/v1/admin/ai/sessions?from=2030-02-01T00:00:00"
+                + "&to=2030-02-01T00:00:10&pageSize=50", adminToken());
+        assertThat(list.status()).isEqualTo(200);
+        assertThat(list.data().path("total").asLong()).isEqualTo(2L);
+    }
+
+    private void insertSession(LocalDateTime createdAt) {
+        insertSessionAt(createdAt, createdAt);
+    }
+
+    private String insertSessionAt(LocalDateTime createdAt, LocalDateTime lastMessageAt) {
+        String id = ("T8" + UUID.randomUUID().toString().replace("-", "")).substring(0, 26);
+        jdbc.update("""
+                INSERT INTO ai_sessions (id, channel, message_count, last_message_at, created_at, updated_at)
+                VALUES (?, 'WEB', 0, ?, ?, ?)
+                """, id, lastMessageAt, createdAt, createdAt);
+        return id;
+    }
+
+    private void insertMessage(String sessionId, String role, LocalDateTime at,
+                               Integer promptTokens, Integer completionTokens, Integer latencyMs) {
+        jdbc.update("""
+                INSERT INTO ai_messages (session_id, role, content, status, prompt_tokens,
+                    completion_tokens, latency_ms, created_at, updated_at)
+                VALUES (?, ?, 'T016', 'COMPLETE', ?, ?, ?, ?, ?)
+                """, sessionId, role, promptTokens, completionTokens, latencyMs, at, at);
+    }
+
+    @Test
+    void statsExcludeSoftDeletedSessions() {
+        LocalDateTime base = LocalDateTime.of(2032, 1, 1, 0, 0, 0);
+        String live = insertSessionAt(base, base);
+        String dead = insertSessionAt(base, base);
+        jdbc.update("UPDATE ai_sessions SET deleted_at = ? WHERE id = ?", base.plusSeconds(5), dead);
+        try {
+            HttpResult stats = get("/api/v1/admin/ai/stats?from=2032-01-01T00:00:00"
+                    + "&to=2032-01-01T00:00:10", adminToken());
+            assertThat(stats.data().path("sessions").asLong()).isEqualTo(1L);
+            HttpResult list = get("/api/v1/admin/ai/sessions?from=2032-01-01T00:00:00"
+                    + "&to=2032-01-01T00:00:10&pageSize=50", adminToken());
+            assertThat(list.data().path("total").asLong()).isEqualTo(1L);
+
+            jdbc.update("UPDATE ai_sessions SET deleted_at = NULL WHERE id = ?", dead);
+            HttpResult restored = get("/api/v1/admin/ai/stats?from=2032-01-01T00:00:00"
+                    + "&to=2032-01-01T00:00:10", adminToken());
+            assertThat(restored.data().path("sessions").asLong()).isEqualTo(2L);
+        } finally {
+            jdbc.update("DELETE FROM ai_messages WHERE session_id IN (?, ?)", live, dead);
+            jdbc.update("DELETE FROM ai_sessions WHERE id IN (?, ?)", live, dead);
+        }
+    }
+
+    @Test
+    void statsExcludeMessagesAndFeedbacksOfSoftDeletedSessions() {
+        LocalDateTime base = LocalDateTime.of(2032, 2, 1, 0, 0, 0);
+        String live = insertSessionAt(base, base);
+        String dead = insertSessionAt(base, base);
+        jdbc.update("UPDATE ai_sessions SET deleted_at = ? WHERE id = ?", base.plusSeconds(5), dead);
+        try {
+            insertMessage(live, "USER", base, null, null, null);
+            insertMessage(live, "ASSISTANT", base.plusSeconds(1), 10, 20, 100);
+            insertMessage(dead, "USER", base, null, null, null);
+            insertMessage(dead, "ASSISTANT", base.plusSeconds(1), 99, 99, 9999);
+            Long liveAssistant = jdbc.queryForObject(
+                    "SELECT MAX(id) FROM ai_messages WHERE session_id = ? AND role = 'ASSISTANT'",
+                    Long.class, live);
+            Long deadAssistant = jdbc.queryForObject(
+                    "SELECT MAX(id) FROM ai_messages WHERE session_id = ? AND role = 'ASSISTANT'",
+                    Long.class, dead);
+            jdbc.update("INSERT INTO ai_feedbacks (message_id, user_id, rating, comment, created_at) "
+                    + "VALUES (?, 1, 1, 'T016', ?)", liveAssistant, base);
+            jdbc.update("INSERT INTO ai_feedbacks (message_id, user_id, rating, comment, created_at) "
+                    + "VALUES (?, 1, 1, 'T016', ?)", deadAssistant, base);
+
+            HttpResult stats = get("/api/v1/admin/ai/stats?from=2032-02-01T00:00:00"
+                    + "&to=2032-02-01T00:00:10", adminToken());
+            assertThat(stats.data().path("messages").asLong()).isEqualTo(2L);
+            assertThat(stats.data().path("promptTokens").asLong()).isEqualTo(10L);
+            assertThat(stats.data().path("completionTokens").asLong()).isEqualTo(20L);
+            assertThat(stats.data().path("avgLatencyMs").asLong()).isEqualTo(100L);
+            assertThat(stats.data().path("p95LatencyMs").asLong()).isEqualTo(100L);
+            assertThat(stats.data().path("positiveFeedbacks").asLong()).isEqualTo(1L);
+        } finally {
+            jdbc.update("DELETE FROM ai_feedbacks WHERE message_id IN "
+                    + "(SELECT id FROM ai_messages WHERE session_id IN (?, ?))", live, dead);
+            jdbc.update("DELETE FROM ai_messages WHERE session_id IN (?, ?)", live, dead);
+            jdbc.update("DELETE FROM ai_sessions WHERE id IN (?, ?)", live, dead);
+        }
     }
 
     @Test

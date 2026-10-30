@@ -26,7 +26,6 @@ import com.wzblog.modules.content.domain.ArticleVisibility;
 import com.wzblog.modules.content.infra.config.ContentProperties;
 import com.wzblog.modules.content.infra.mapper.ArticleMapper;
 import com.wzblog.modules.content.infra.mapper.ArticleRevisionMapper;
-import com.wzblog.modules.content.infra.mapper.SearchHit;
 import com.wzblog.modules.identity.app.UserQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +34,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -87,7 +85,8 @@ public class ArticleReadService {
     }
 
     public CursorPage<ArticleListItemVO> feed(String keyword, String categoryId, String tagId,
-                                              Integer year, Integer month, String cursor, Integer size) {
+                                              Integer year, Integer month,
+                                              String cursor, Integer size) {
         int limit = pageSize(size, 20, 50);
         if (keyword != null && keyword.length() > 50) {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "keyword 不能超过 50 字符", null);
@@ -99,7 +98,7 @@ public class ArticleReadService {
         CursorCodec.Cursor decoded = CursorCodec.decode(cursor);
         LocalDateTime cursorTime = decoded == null ? null : CursorCodec.toUtc(decoded);
         Long cursorId = decoded == null ? null : decoded.id();
-        String keywordFilter = keyword == null || keyword.isBlank() ? null : keyword.trim();
+        String keywordFilter = keyword == null || keyword.isBlank() ? null : escapeLike(keyword.trim());
 
         List<Article> rows = articleMapper.selectFeed(
                 Ids.parseNullable(categoryId), Ids.parseNullable(tagId), keywordFilter,
@@ -128,38 +127,10 @@ public class ArticleReadService {
         int limit = pageSize(size, 10, 20);
         Long category = Ids.parseNullable(categoryId);
         Long tag = Ids.parseNullable(tagId);
-        // BOOLEAN MODE 清洗（防 1064 语法错误 500）；清洗后为空则降级 LIKE 原词
-        String cleaned = sanitizeSearchKeyword(value);
-        if (!cleaned.equals(value)) {
-            if (cleaned.isBlank()) {
-                List<Article> rows = articleMapper.selectSearchLike(value, category, tag, limit);
-                return new SearchResultVO(articleAssembler.toListItems(rows), true);
-            }
-            value = cleaned;
-        }
-        if (value.codePointCount(0, value.length()) < 2) {
-            List<Article> rows = articleMapper.selectSearchLike(value, category, tag, limit);
-            return new SearchResultVO(articleAssembler.toListItems(rows), true);
-        }
-
-        List<SearchHit> hits = articleMapper.selectSearchHits(value, category, tag, Math.min(100, limit * 5));
-        if (hits.isEmpty()) {
-            return new SearchResultVO(List.of(), false);
-        }
-        List<Long> ids = hits.stream().map(SearchHit::getId).toList();
-        Map<Long, Article> articles = new HashMap<>();
-        for (Article article : articleMapper.selectPublicByIds(ids)) {
-            articles.put(article.getId(), article);
-        }
-        Instant now = Instant.now();
-        final String keywordForScoring = value;
-        List<Article> ordered = hits.stream()
-                .filter(hit -> articles.containsKey(hit.getId()))
-                .sorted(Comparator.comparingDouble((SearchHit hit) -> weightedScore(hit, keywordForScoring, now)).reversed())
-                .limit(limit)
-                .map(hit -> articles.get(hit.getId()))
-                .toList();
-        return new SearchResultVO(articleAssembler.toListItems(ordered), false);
+        // 与信息流统一为 title+summary 包含匹配（%kw%），按发布时间倒序，便于两接口对拍
+        boolean degraded = value.codePointCount(0, value.length()) < 2;
+        List<Article> rows = articleMapper.selectSearchLike(escapeLike(value), category, tag, limit);
+        return new SearchResultVO(articleAssembler.toListItems(rows), degraded);
     }
 
     public List<ArticleListItemVO> pinned(int limit) {
@@ -185,11 +156,11 @@ public class ArticleReadService {
         }
         List<ArchiveItemVO> result = new ArrayList<>();
         if (year == null) {
-            for (Map<String, Object> row : articleMapper.selectArchiveYears()) {
+            for (Map<String, Object> row : articleMapper.selectArchiveYears(BUSINESS_ZONE_OFFSET)) {
                 result.add(new ArchiveItemVO(intValue(row, "y", "Y"), null, longValue(row, "cnt", "CNT")));
             }
         } else {
-            for (Map<String, Object> row : articleMapper.selectArchiveMonths(year)) {
+            for (Map<String, Object> row : articleMapper.selectArchiveMonths(year, BUSINESS_ZONE_OFFSET)) {
                 result.add(new ArchiveItemVO(year, intValue(row, "m", "M"), longValue(row, "cnt", "CNT")));
             }
         }
@@ -284,8 +255,9 @@ public class ArticleReadService {
         };
         Long category = Ids.parseNullable(categoryId);
         Long author = Ids.parseNullable(authorId);
-        long total = articleMapper.countAdmin(statusFilter, visibilityFilter, deleted, keyword, category, author);
-        List<Article> rows = articleMapper.selectAdmin(statusFilter, visibilityFilter, deleted, keyword,
+        String keywordFilter = keyword == null ? null : escapeLike(keyword.trim());
+        long total = articleMapper.countAdmin(statusFilter, visibilityFilter, deleted, keywordFilter, category, author);
+        List<Article> rows = articleMapper.selectAdmin(statusFilter, visibilityFilter, deleted, keywordFilter,
                 category, author, sortKey, (long) (safePage - 1) * safeSize, safeSize);
         return PageResult.of(articleAssembler.toListItems(rows), total, safePage, safeSize);
     }
@@ -356,28 +328,6 @@ public class ArticleReadService {
                 && (currentUser.role() == Role.EDITOR || currentUser.role() == Role.ADMIN);
     }
 
-    private double weightedScore(SearchHit hit, String keyword, Instant now) {
-        double score = hit.getScore() == null ? 0 : hit.getScore();
-        score += 3.0 * occurrences(hit.getTitle(), keyword);
-        Instant publishedAt = hit.getPublishedAt() == null
-                ? now : hit.getPublishedAt().toInstant(ZoneOffset.UTC);
-        double days = Math.max(0, Duration.between(publishedAt, now).toDays());
-        return score / (1.0 + days / 365.0);
-    }
-
-    private int occurrences(String text, String keyword) {
-        if (text == null || keyword == null || keyword.isEmpty()) {
-            return 0;
-        }
-        int count = 0;
-        int index = 0;
-        while ((index = text.indexOf(keyword, index)) >= 0) {
-            count++;
-            index += keyword.length();
-        }
-        return count;
-    }
-
     private ArticleDetailVO readCache(Article article) {
         try {
             String json = redis.opsForValue().get(cacheKey(article));
@@ -403,18 +353,13 @@ public class ArticleReadService {
         return "content:article:" + article.getId() + ":v" + article.getVersion();
     }
 
+    private static final String BUSINESS_ZONE_OFFSET = "+08:00";
+
     /**
-     * BOOLEAN MODE 关键词清洗：剥离布尔操作符与引号，防 MySQL 1064 语法错误（公开搜索接口 500）。
+     * LIKE 包含匹配转义：! 为 ESCAPE 字符，% _ 按字面匹配；反斜杠在 ESCAPE '!' 下不再是转义符。
      */
-    static String sanitizeSearchKeyword(String keyword) {
-        if (keyword == null) {
-            return "";
-        }
-        String cleaned = keyword.replace("-", " ")
-                .replaceAll("[+*<>()~@\"]", " ")
-                .replace("'", " ")
-                .trim();
-        return cleaned.isBlank() ? "" : cleaned;
+    private static String escapeLike(String value) {
+        return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     private TimeRange timeRange(Integer year, Integer month) {

@@ -39,7 +39,13 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     private com.wzblog.modules.admin.app.SiteConfigService siteConfigService;
 
     @Autowired
+    private com.wzblog.common.error.GlobalExceptionHandler globalExceptionHandler;
+
+    @Autowired
     private com.wzblog.modules.interaction.app.InteractionReconcileService reconcileService;
+
+    @Autowired
+    private com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry sseConnectionRegistry;
 
     /** 提权为 EDITOR 后返回其 token（普通用户无发文权限）。 */
     private String editorToken(String username) {
@@ -456,9 +462,10 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         publicList = get("/api/v1/guestbook", null);
         assertThat(publicList.data().path("list").size()).isEqualTo(1);
 
-        // 超长留言 400
-        assertThat(post("/api/v1/guestbook", Map.of("content", "长".repeat(1001)), null)
-                .status()).isEqualTo(400);
+        // 超长留言 400：入口防爆放行到业务层，返回留言业务码
+        HttpResult tooLong = post("/api/v1/guestbook", Map.of("content", "长".repeat(1001)), null);
+        assertThat(tooLong.status()).isEqualTo(400);
+        assertThat(tooLong.code()).isEqualTo("GUESTBOOK_CONTENT_TOO_LONG");
 
         // 普通用户无审核权限
         String username = unique("gb");
@@ -468,6 +475,71 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     }
 
     // ------------------------------------------------------------ 通知
+
+    @Test
+    void guestbookBoundariesUseBusinessCode() {
+        assertThat(post("/api/v1/guestbook", Map.of("content", "长".repeat(1000)), null)
+                .status()).isEqualTo(200);
+
+        HttpResult over = post("/api/v1/guestbook", Map.of("content", "长".repeat(1001)), null);
+        assertThat(over.status()).isEqualTo(400);
+        assertThat(over.code()).isEqualTo("GUESTBOOK_CONTENT_TOO_LONG");
+
+        HttpResult hard = post("/api/v1/guestbook", Map.of("content", "长".repeat(10001)), null);
+        assertThat(hard.status()).isEqualTo(400);
+        assertThat(hard.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(hard.data().path("errors").path("content").asText()).isNotBlank();
+
+        HttpResult nickname = post("/api/v1/guestbook",
+                Map.of("content", "ok", "nickname", "名".repeat(31)), null);
+        assertThat(nickname.status()).isEqualTo(400);
+        assertThat(nickname.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(nickname.data().path("errors").path("nickname").asText()).isNotBlank();
+    }
+
+    @Test
+    void commentBoundariesUseBusinessCode() {
+        long article = createPublishedArticle(adminToken());
+        assertThat(post("/api/v1/articles/" + article + "/comments",
+                commentBody("长".repeat(2000)), adminToken()).status()).isEqualTo(200);
+
+        HttpResult over = post("/api/v1/articles/" + article + "/comments",
+                commentBody("长".repeat(2001)), adminToken());
+        assertThat(over.status()).isEqualTo(400);
+        assertThat(over.code()).isEqualTo("COMMENT_CONTENT_TOO_LONG");
+
+        HttpResult hard = post("/api/v1/articles/" + article + "/comments",
+                commentBody("长".repeat(20001)), adminToken());
+        assertThat(hard.status()).isEqualTo(400);
+        assertThat(hard.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(hard.data().path("errors").path("content").asText()).isNotBlank();
+
+        Map<String, Object> guest = new LinkedHashMap<>();
+        guest.put("content", "ok");
+        guest.put("guestNickname", "名".repeat(31));
+        HttpResult nickname = post("/api/v1/articles/" + article + "/comments", guest, null);
+        assertThat(nickname.status()).isEqualTo(400);
+        assertThat(nickname.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(nickname.data().path("errors").path("guestNickname").asText()).isNotBlank();
+    }
+
+    @Test
+    void bindExceptionReturnsFieldErrors() {
+        org.springframework.validation.BeanPropertyBindingResult binding =
+                new org.springframework.validation.BeanPropertyBindingResult(new Object(), "probe");
+        binding.addError(new org.springframework.validation.FieldError(
+                "probe", "nickname", "昵称长度需为 1~30 个字符"));
+        org.springframework.http.ResponseEntity<com.wzblog.common.api.Result<Object>> response =
+                globalExceptionHandler.handleBind(
+                        new org.springframework.validation.BindException(binding));
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody().code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) response.getBody().data();
+        @SuppressWarnings("unchecked")
+        Map<String, String> errors = (Map<String, String>) data.get("errors");
+        assertThat(errors.get("nickname")).isNotBlank();
+    }
 
     @Test
     void notificationsWithDedupAndRead() throws Exception {
@@ -709,6 +781,109 @@ class InteractionIntegrationTest extends IdentityTestSupport {
 
         assertThat(lines).isNotEmpty();
         assertThat(String.join("\n", lines)).contains("event:ready").contains("unreadCount");
+    }
+
+    @Test
+    void commentAuthorIdIsStringAndCreateReturnsFullAuthor() {
+        long article = createPublishedArticle(adminToken());
+
+        // B-3：登录用户创建评论，响应 author 必须是完整作者（非匿名壳），userId 为字符串
+        HttpResult created = post("/api/v1/articles/" + article + "/comments",
+                commentBody("B1B3 校验"), adminToken());
+        assertThat(created.status()).as("create: %s", created.body()).isEqualTo(200);
+        JsonNode author = created.data().path("author");
+        assertThat(author.path("userId").isTextual())
+                .as("B-1 create author.userId 应为字符串: %s", author).isTrue();
+        assertThat(author.path("userId").asText()).isEqualTo("1");
+        assertThat(author.path("nickname").asText()).isNotBlank().isNotEqualTo("匿名");
+        assertThat(author.path("guest").isBoolean()).isTrue();
+
+        // 审核通过后列表同样断言
+        long commentId = created.data().path("id").asLong();
+        put("/api/v1/admin/comments/" + commentId + "/status",
+                Map.of("status", "APPROVED", "remark", "ok"), adminToken());
+        HttpResult list = get("/api/v1/articles/" + article + "/comments", null);
+        assertThat(list.status()).isEqualTo(200);
+        JsonNode listAuthor = list.data().path("list").get(0).path("author");
+        assertThat(listAuthor.path("userId").isTextual())
+                .as("B-1 list author.userId 应为字符串: %s", listAuthor).isTrue();
+
+        // 留言 B-1：创建响应即带完整作者；审核通过后列表同样为字符串
+        HttpResult gb = post("/api/v1/guestbook",
+                Map.of("content", "B1 留言校验", "nickname", "qa"), adminToken());
+        assertThat(gb.status()).as("guestbook create: %s", gb.body()).isEqualTo(200);
+        JsonNode gbAuthor = gb.data().path("author");
+        assertThat(gbAuthor.path("userId").isTextual())
+                .as("B-1 guestbook create author.userId 应为字符串: %s", gbAuthor).isTrue();
+        long gbId = gb.data().path("id").asLong();
+        put("/api/v1/admin/guestbook/" + gbId + "/status",
+                Map.of("status", "APPROVED", "remark", "ok"), adminToken());
+        HttpResult gbList = get("/api/v1/guestbook?page=1&pageSize=5", adminToken());
+        assertThat(gbList.status()).isEqualTo(200);
+        JsonNode gbItems = gbList.data().path("list").size() > 0
+                ? gbList.data().path("list") : gbList.data();
+        boolean foundStringUserId = false;
+        for (JsonNode item : gbItems) {
+            if (item.path("id").asText().equals(String.valueOf(gbId))) {
+                JsonNode listedAuthor = item.path("author");
+                assertThat(listedAuthor.path("userId").isTextual())
+                        .as("B-1 guestbook list author.userId 应为字符串: %s", listedAuthor).isTrue();
+                foundStringUserId = true;
+                break;
+            }
+        }
+        assertThat(foundStringUserId).as("审核后的留言应出现在列表").isTrue();
+
+        // 收尾隐藏，避免影响 guestbookLifecycle 的公开列表计数断言
+        put("/api/v1/admin/guestbook/" + gbId + "/status",
+                Map.of("status", "HIDDEN", "remark", "cleanup"), adminToken());
+
+        // 通知 B-1
+        HttpResult notifList = get("/api/v1/notifications?page=1&pageSize=5", adminToken());
+        assertThat(notifList.status()).isEqualTo(200);
+        for (JsonNode item : notifList.data().path("list")) {
+            JsonNode actor = item.path("actor");
+            if (!actor.isMissingNode() && !actor.path("userId").isNull()
+                    && !actor.path("userId").isMissingNode()) {
+                assertThat(actor.path("userId").isTextual())
+                        .as("B-1 notification actor.userId 应为字符串: %s", actor).isTrue();
+                break;
+            }
+        }
+    }
+
+    @Test
+    void sseStreamLimitEvictsOldestConnection() {
+        String username = unique("ssl");
+        register(username, PASSWORD, null);
+        long userId = userId(username);
+
+        class TrackingEmitter extends org.springframework.web.servlet.mvc.method.annotation.SseEmitter {
+            boolean completed;
+
+            TrackingEmitter() {
+                super(0L);
+            }
+
+            @Override
+            public void complete() {
+                completed = true;
+                super.complete();
+            }
+        }
+
+        TrackingEmitter oldest = new TrackingEmitter();
+        assertThat(sseConnectionRegistry.register(userId, oldest)).isTrue();
+        for (int i = 1; i < com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry.MAX_PER_USER; i++) {
+            assertThat(sseConnectionRegistry.register(userId,
+                    new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(0L))).isTrue();
+        }
+
+        // 第 4 条：淘汰最旧连接并接纳新连接，而不是 429
+        assertThat(sseConnectionRegistry.register(userId, new TrackingEmitter())).isTrue();
+        assertThat(sseConnectionRegistry.connectionCount(userId))
+                .isEqualTo(com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry.MAX_PER_USER);
+        assertThat(oldest.completed).as("最旧连接应被淘汰关闭").isTrue();
     }
     @Test
     void offsetPaginationRejectsOutOfRangeParams() throws Exception {

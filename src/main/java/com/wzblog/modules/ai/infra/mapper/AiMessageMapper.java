@@ -85,39 +85,45 @@ public interface AiMessageMapper extends BaseMapper<AiMessage> {
 
     // ------------------------------------------------------------ 统计（本模块自有表）
 
-    @Select("SELECT COUNT(*) FROM ai_messages WHERE created_at >= #{from} AND created_at < #{to}")
+    /** 统计口径：软删会话一律不计入（D82）。 */
+    String LIVE_SESSION_FILTER =
+            " AND EXISTS (SELECT 1 FROM ai_sessions s "
+                    + "WHERE s.id = ai_messages.session_id AND s.deleted_at IS NULL) ";
+
+    @Select("SELECT COUNT(*) FROM ai_messages WHERE created_at >= #{from} AND created_at < #{to}"
+            + LIVE_SESSION_FILTER)
     long countInRange(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     @Select("""
             SELECT COALESCE(SUM(prompt_tokens), 0) FROM ai_messages
             WHERE created_at >= #{from} AND created_at < #{to}
-            """)
+            """ + LIVE_SESSION_FILTER)
     long sumPromptTokens(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     @Select("""
             SELECT COALESCE(SUM(completion_tokens), 0) FROM ai_messages
             WHERE created_at >= #{from} AND created_at < #{to}
-            """)
+            """ + LIVE_SESSION_FILTER)
     long sumCompletionTokens(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     @Select("""
             SELECT COALESCE(AVG(latency_ms), 0) FROM ai_messages
             WHERE role = 'ASSISTANT' AND latency_ms IS NOT NULL
               AND created_at >= #{from} AND created_at < #{to}
-            """)
+            """ + LIVE_SESSION_FILTER)
     long avgLatency(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     @Select("""
             SELECT COALESCE(MAX(latency_ms), 0) FROM ai_messages
             WHERE role = 'ASSISTANT' AND latency_ms IS NOT NULL
               AND created_at >= #{from} AND created_at < #{to}
-            """)
+            """ + LIVE_SESSION_FILTER)
     long maxLatency(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     @Select("""
             SELECT COUNT(*) FROM ai_messages
             WHERE role = 'TOOL' AND created_at >= #{from} AND created_at < #{to}
-            """)
+            """ + LIVE_SESSION_FILTER)
     long countToolCalls(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     @Select("""

@@ -78,7 +78,7 @@ public class AiAssistService {
             boolean exists = existing.stream()
                     .anyMatch(candidate -> candidate.toLowerCase(Locale.ROOT)
                             .equals(name.toLowerCase(Locale.ROOT)));
-            tags.add(Map.of("name", name, "slug", slugify(name), "existing", exists));
+            tags.add(Map.of("name", name, "slug", slugify(name), "exists", exists));
         }
         return Map.of("tags", tags, "model", chatClient.modelName(), "usage", Map.of(
                 "promptTokens", completion.usage().promptTokens(),

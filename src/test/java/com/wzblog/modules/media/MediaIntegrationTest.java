@@ -352,6 +352,153 @@ class MediaIntegrationTest extends IdentityTestSupport {
         assertThat(status).isEqualTo("DELETED");
     }
 
+    // ------------------------------------------------------------ T-013 实时引用删除保护
+
+    private Long createProbeArticle() {
+        String slug = unique("t13a");
+        jdbc.update("""
+                INSERT INTO articles (author_id, title, slug, summary, content_md, content_html,
+                    content_text, status, visibility, is_pinned, allow_comment, word_count,
+                    reading_seconds, view_count, view_external_count, view_internal_count,
+                    like_count, favorite_count, comment_count, version, created_at, updated_at)
+                VALUES (1, 'T013 引用测试', ?, '', '', '', '', 'PUBLISHED', 'PUBLIC', 0, 1, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))
+                """, slug);
+        return jdbc.queryForObject("SELECT id FROM articles WHERE slug = ?", Long.class, slug);
+    }
+
+    @Test
+    void deleteRejectsArticleCoverEvenWhenRefCountZero() throws Exception {
+        String token = adminToken();
+        byte[] png = pngBytes(15, 15);
+        Parsed uploaded = upload(token, "cover.png", "image/png", png, "ARTICLE_COVER");
+        long fileId = uploaded.data().path("fileId").asLong();
+        String objectKey = uploaded.data().path("objectKey").asText();
+        assertThat(refCount(fileId)).isZero();
+
+        Parsed duplicate = upload(token, "cover-again.png", "image/png", png, "ARTICLE_COVER");
+        assertThat(duplicate.data().path("fileId").asText()).isEqualTo(String.valueOf(fileId));
+
+        Long articleId = createProbeArticle();
+        try {
+            jdbc.update("UPDATE articles SET cover_key = ? WHERE id = ?", objectKey, articleId);
+            Parsed inUse = toParsed(delete("/api/v1/files/" + fileId, token));
+            assertThat(inUse.status()).isEqualTo(409);
+            assertThat(inUse.code()).isEqualTo("FILE_IN_USE");
+            assertThat(inUse.data().path("references")).anySatisfy(node -> {
+                assertThat(node.path("table").asText()).isEqualTo("articles");
+                assertThat(node.path("column").asText()).isEqualTo("cover_key");
+                assertThat(node.path("id").asText()).isEqualTo(String.valueOf(articleId));
+            });
+        } finally {
+            jdbc.update("DELETE FROM articles WHERE id = ?", articleId);
+        }
+
+        assertThat(toParsed(delete("/api/v1/files/" + fileId, token)).status()).isEqualTo(200);
+    }
+
+    @Test
+    void deleteRejectsMarkdownContentReference() throws Exception {
+        String token = adminToken();
+        Parsed uploaded = upload(token, "md.png", "image/png", pngBytes(16, 16), "CONTENT_IMAGE");
+        long fileId = uploaded.data().path("fileId").asLong();
+        String objectKey = uploaded.data().path("objectKey").asText();
+
+        Long articleId = createProbeArticle();
+        try {
+            jdbc.update("UPDATE articles SET content_md = ? WHERE id = ?",
+                    "![](/media/" + objectKey + ")", articleId);
+            Parsed inUse = toParsed(delete("/api/v1/files/" + fileId, token));
+            assertThat(inUse.status()).isEqualTo(409);
+            assertThat(inUse.data().path("references")).anySatisfy(node -> {
+                assertThat(node.path("table").asText()).isEqualTo("articles");
+                assertThat(node.path("column").asText()).isEqualTo("content_md");
+                assertThat(node.path("id").asText()).isEqualTo(String.valueOf(articleId));
+            });
+        } finally {
+            jdbc.update("DELETE FROM articles WHERE id = ?", articleId);
+        }
+        assertThat(toParsed(delete("/api/v1/files/" + fileId, token)).status()).isEqualTo(200);
+    }
+
+    @Test
+    void deleteRejectsRenderedHtmlReference() throws Exception {
+        String token = adminToken();
+        Parsed uploaded = upload(token, "html.png", "image/png", pngBytes(17, 17), "CONTENT_IMAGE");
+        long fileId = uploaded.data().path("fileId").asLong();
+        String objectKey = uploaded.data().path("objectKey").asText();
+
+        Long articleId = createProbeArticle();
+        try {
+            jdbc.update("UPDATE articles SET content_html = ? WHERE id = ?",
+                    "<p><img src=\"/media/" + objectKey + "\" /></p>", articleId);
+            Parsed inUse = toParsed(delete("/api/v1/files/" + fileId, token));
+            assertThat(inUse.status()).isEqualTo(409);
+            assertThat(inUse.data().path("references")).anySatisfy(node ->
+                    assertThat(node.path("column").asText()).isEqualTo("content_html"));
+        } finally {
+            jdbc.update("DELETE FROM articles WHERE id = ?", articleId);
+        }
+        assertThat(toParsed(delete("/api/v1/files/" + fileId, token)).status()).isEqualTo(200);
+    }
+
+    @Test
+    void deleteRejectsHistoricalRevisionReference() throws Exception {
+        String token = adminToken();
+        Parsed uploaded = upload(token, "rev.png", "image/png", pngBytes(18, 18), "CONTENT_IMAGE");
+        long fileId = uploaded.data().path("fileId").asLong();
+        String objectKey = uploaded.data().path("objectKey").asText();
+
+        Long articleId = createProbeArticle();
+        try {
+            jdbc.update("""
+                    INSERT INTO article_revisions (article_id, revision_no, editor_id, title,
+                        summary, content_md, change_note)
+                    VALUES (?, 99901, 1, 'T013 历史引用', '', ?, 'T013')
+                    """, articleId, "![](/media/" + objectKey + ")");
+            Parsed inUse = toParsed(delete("/api/v1/files/" + fileId, token));
+            assertThat(inUse.status()).isEqualTo(409);
+            assertThat(inUse.data().path("references")).anySatisfy(node -> {
+                assertThat(node.path("table").asText()).isEqualTo("article_revisions");
+                assertThat(node.path("column").asText()).isEqualTo("content_md");
+                assertThat(node.path("historical").asBoolean()).isTrue();
+            });
+        } finally {
+            jdbc.update("DELETE FROM article_revisions WHERE article_id = ?", articleId);
+            jdbc.update("DELETE FROM articles WHERE id = ?", articleId);
+        }
+        assertThat(toParsed(delete("/api/v1/files/" + fileId, token)).status()).isEqualTo(200);
+    }
+
+    @Test
+    void deleteRejectsFriendLinkReferenceWithoutRefCount() throws Exception {
+        String token = adminToken();
+        Parsed uploaded = upload(token, "logo.png", "image/png", pngBytes(19, 19), "CONTENT_IMAGE");
+        long fileId = uploaded.data().path("fileId").asLong();
+        String objectKey = uploaded.data().path("objectKey").asText();
+        assertThat(refCount(fileId)).isZero();
+
+        String blogName = unique("t13blog");
+        jdbc.update("""
+                INSERT INTO friend_links (blog_name, blog_url, logo_key, sort_order)
+                VALUES (?, 'https://example.com', ?, 999)
+                """, blogName, objectKey);
+        Long linkId = jdbc.queryForObject(
+                "SELECT id FROM friend_links WHERE blog_name = ?", Long.class, blogName);
+        try {
+            Parsed inUse = toParsed(delete("/api/v1/files/" + fileId, token));
+            assertThat(inUse.status()).isEqualTo(409);
+            assertThat(inUse.data().path("references")).anySatisfy(node -> {
+                assertThat(node.path("table").asText()).isEqualTo("friend_links");
+                assertThat(node.path("column").asText()).isEqualTo("logo_key");
+                assertThat(node.path("id").asText()).isEqualTo(String.valueOf(linkId));
+            });
+        } finally {
+            jdbc.update("DELETE FROM friend_links WHERE id = ?", linkId);
+        }
+        assertThat(toParsed(delete("/api/v1/files/" + fileId, token)).status()).isEqualTo(200);
+    }
+
     @Test
     void tempUrlRequiresSignatureAndOwnership() throws Exception {
         String username = unique("m5url");

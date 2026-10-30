@@ -37,12 +37,13 @@ public class TitleAppService {
     }
 
     @Transactional
-    public TitleVO create(CurrentUser admin, TitleUpsertRequest request) {
+    public AdminTitleVO create(CurrentUser admin, TitleUpsertRequest request) {
         if (titleMapper.selectIdByName(request.name().trim(), null) != null) {
             throw new BusinessException(ErrorCode.TITLE_NAME_CONFLICT);
         }
         Title title = new Title();
         applyFields(title, request);
+        title.setCreatedAt(Times.nowUtc());
         try {
             titleMapper.insert(title);
         } catch (org.springframework.dao.DuplicateKeyException ex) {
@@ -51,11 +52,11 @@ public class TitleAppService {
         }
         auditRecorder.record(admin, "TITLE_CREATE", "TITLE", String.valueOf(title.getId()),
                 null, "{\"name\":\"" + title.getName() + "\"}");
-        return toVo(title);
+        return toAdminVo(title);
     }
 
     @Transactional
-    public TitleVO update(CurrentUser admin, Long id, TitleUpsertRequest request) {
+    public AdminTitleVO update(CurrentUser admin, Long id, TitleUpsertRequest request) {
         Title title = requireExisting(id);
         if (titleMapper.selectIdByName(request.name().trim(), id) != null) {
             throw new BusinessException(ErrorCode.TITLE_NAME_CONFLICT);
@@ -69,7 +70,7 @@ public class TitleAppService {
         }
         auditRecorder.record(admin, "TITLE_UPDATE", "TITLE", String.valueOf(id),
                 null, "{\"name\":\"" + title.getName() + "\"}");
-        return toVo(title);
+        return toAdminVo(title);
     }
 
     @Transactional
@@ -105,5 +106,11 @@ public class TitleAppService {
     private TitleVO toVo(Title title) {
         return new TitleVO(String.valueOf(title.getId()), title.getName(), title.getCssClass(),
                 title.getDescription(), title.getSortOrder());
+    }
+
+    private AdminTitleVO toAdminVo(Title title) {
+        return new AdminTitleVO(String.valueOf(title.getId()), title.getName(), title.getCssClass(),
+                title.getDescription(), title.getSortOrder(), title.isDeleted(),
+                Times.toInstant(title.getCreatedAt()));
     }
 }

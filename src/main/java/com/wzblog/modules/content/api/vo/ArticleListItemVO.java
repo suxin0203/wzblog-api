@@ -2,6 +2,8 @@ package com.wzblog.modules.content.api.vo;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.wzblog.modules.content.domain.ArticleStatus;
+import com.wzblog.modules.content.domain.ArticleVisibility;
 
 import java.time.Instant;
 import java.util.List;
@@ -22,6 +24,8 @@ public record ArticleListItemVO(
         int likeCount,
         int favoriteCount,
         int commentCount,
+        ArticleStatus status,
+        ArticleVisibility visibility,
         boolean isPinned,
         int readingSeconds,
         Instant publishedAt

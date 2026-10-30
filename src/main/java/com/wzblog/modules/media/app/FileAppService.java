@@ -20,6 +20,7 @@ import com.wzblog.modules.media.domain.event.FileActivatedEvent;
 import com.wzblog.modules.media.infra.config.FileStorageProperties;
 import com.wzblog.modules.media.infra.image.ImageAnalyzer;
 import com.wzblog.modules.media.infra.mapper.FileMapper;
+import com.wzblog.modules.media.infra.mapper.FileReferenceQueryMapper;
 import com.wzblog.modules.media.infra.storage.ObjectStorage;
 import com.wzblog.modules.media.infra.storage.UrlSigner;
 import org.slf4j.Logger;
@@ -37,9 +38,12 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -65,12 +69,14 @@ public class FileAppService implements FileReferencePort {
     private final StringRedisTemplate redis;
     private final SlidingWindowRateLimiter rateLimiter;
     private final ApplicationEventPublisher eventPublisher;
+    private final FileReferenceQueryMapper referenceQueryMapper;
 
     public FileAppService(FileMapper fileMapper, ObjectStorage objectStorage,
                           ImageAnalyzer imageAnalyzer, UrlSigner urlSigner,
                           FileStorageProperties properties, StringRedisTemplate redis,
                           SlidingWindowRateLimiter rateLimiter,
-                          ApplicationEventPublisher eventPublisher) {
+                          ApplicationEventPublisher eventPublisher,
+                          FileReferenceQueryMapper referenceQueryMapper) {
         this.fileMapper = fileMapper;
         this.objectStorage = objectStorage;
         this.imageAnalyzer = imageAnalyzer;
@@ -79,6 +85,7 @@ public class FileAppService implements FileReferencePort {
         this.redis = redis;
         this.rateLimiter = rateLimiter;
         this.eventPublisher = eventPublisher;
+        this.referenceQueryMapper = referenceQueryMapper;
     }
 
     // ------------------------------------------------------------ 预签名
@@ -291,6 +298,9 @@ public class FileAppService implements FileReferencePort {
 
     // ------------------------------------------------------------ 删除
 
+    /** 引用判定耗时告警阈值（D59）。 */
+    private static final long REF_CHECK_WARN_MS = 500;
+
     @Transactional
     public void delete(CurrentUser user, Long id) {
         FileEntry entry = fileMapper.selectForUpdateById(id);
@@ -298,8 +308,29 @@ public class FileAppService implements FileReferencePort {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND);
         }
         requireOwnerOrAdmin(user, entry);
-        if (entry.getRefCount() != null && entry.getRefCount() > 0) {
-            throw new BusinessException(ErrorCode.FILE_IN_USE);
+
+        // D55：实时引用为权威；ref_count 仅快筛提示，不一致时记录告警
+        long startedAt = System.nanoTime();
+        List<Map<String, Object>> references =
+                referenceQueryMapper.selectReferences(entry.getObjectKey());
+        long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        if (elapsedMs > REF_CHECK_WARN_MS) {
+            log.warn("文件引用判定耗时过长 fileId={} elapsedMs={}", id, elapsedMs);
+        }
+        int refCount = entry.getRefCount() == null ? 0 : entry.getRefCount();
+        if (refCount == 0 && !references.isEmpty()) {
+            log.warn("ref_count 与实时引用不一致 fileId={} ref_count={} actual={}",
+                    id, refCount, references.size());
+        } else if (refCount > 0 && references.isEmpty()) {
+            log.warn("ref_count 与实时引用不一致 fileId={} ref_count={} actual=0", id, refCount);
+        }
+        if (refCount > 0 || !references.isEmpty()) {
+            List<Map<String, Object>> locations = toLocations(references);
+            log.warn("文件删除被拒绝 fileId={} refCount={} references={}", id, refCount, locations);
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("refCount", refCount);
+            detail.put("references", locations);
+            throw new BusinessException(ErrorCode.FILE_IN_USE, "文件正在被引用，无法删除", null, detail);
         }
         if (fileMapper.softDelete(id, Times.nowUtc()) == 0) {
             throw new BusinessException(ErrorCode.FILE_IN_USE);
@@ -308,6 +339,32 @@ public class FileAppService implements FileReferencePort {
         if (entry.getThumbKey() != null) {
             objectStorage.delete(entry.getThumbKey());
         }
+        log.info("文件已删除 fileId={} objectKey={}", id, entry.getObjectKey());
+    }
+
+    private List<Map<String, Object>> toLocations(List<Map<String, Object>> rows) {
+        List<Map<String, Object>> locations = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> location = new LinkedHashMap<>();
+            location.put("table", getIgnoreCase(row, "tableName"));
+            location.put("column", getIgnoreCase(row, "columnName"));
+            Object refId = getIgnoreCase(row, "refId");
+            location.put("id", refId == null ? null : String.valueOf(refId));
+            location.put("label", getIgnoreCase(row, "label"));
+            Object historical = getIgnoreCase(row, "historical");
+            location.put("historical", historical instanceof Number n && n.intValue() == 1);
+            locations.add(location);
+        }
+        return locations;
+    }
+
+    private static Object getIgnoreCase(Map<String, Object> row, String key) {
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(key)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     // ------------------------------------------------------------ 后台

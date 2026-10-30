@@ -7,6 +7,6 @@ import jakarta.validation.constraints.Size;
  * 发表留言请求。
  */
 public record GuestbookCreateRequest(
-        @NotBlank @Size(max = 1100) String content,
-        @Size(max = 40) String nickname) {
+        @NotBlank @Size(max = 10000) String content,
+        @Size(max = 30) String nickname) {
 }

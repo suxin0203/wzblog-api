@@ -34,3 +34,5 @@ tools/
 # Test / coverage
 target/surefire-reports/
 target/failsafe-reports/
+# Browser test artifacts
+.playwright-mcp/

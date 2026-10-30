@@ -39,6 +39,7 @@ public class NotificationAppService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationAppService.class);
     private static final Duration UNREAD_TTL = Duration.ofHours(1);
+    /** 30 分钟主动超时；连接期间的存活由 20s 心跳探测（SseConnectionRegistry）。 */
     private static final long SSE_TIMEOUT_MILLIS = 30 * 60 * 1000L;
 
     private final NotificationMapper notificationMapper;
@@ -165,7 +166,10 @@ public class NotificationAppService {
     public SseEmitter openStream(CurrentUser user, String lastEventId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         if (!sseRegistry.register(user.id(), emitter)) {
-            throw new BusinessException(ErrorCode.NOTIFY_STREAM_LIMITED);
+            // 淘汰策略下正常不可达（D14），仅作并发/极端情况兜底，保留 429 + Retry-After
+            throw new BusinessException(ErrorCode.NOTIFY_STREAM_LIMITED,
+                    ErrorCode.NOTIFY_STREAM_LIMITED.defaultMessage(),
+                    com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry.SSE_RETRY_AFTER_SECONDS);
         }
         try {
             emitter.send(SseEmitter.event().comment("ping"));

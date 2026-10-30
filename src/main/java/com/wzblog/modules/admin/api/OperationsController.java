@@ -76,11 +76,13 @@ public class OperationsController {
     public ResponseEntity<Result<PageResult<Map<String, Object>>>> adminBanners(
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        List<Banner> banners = operationsAppService.adminBanners(PageParams.requirePage(page),
-                PageParams.requirePageSize(pageSize));
+        int safePage = PageParams.requirePage(page);
+        int safePageSize = PageParams.requirePageSize(pageSize);
+        List<Banner> banners = operationsAppService.adminBanners(safePage, safePageSize);
+        long total = operationsAppService.countBanners();
         return ResponseEntity.ok(Result.ok(new PageResult<>(
-                banners.stream().map(this::bannerVo).toList(), banners.size(), page, pageSize,
-                false)));
+                banners.stream().map(this::bannerVo).toList(), total, safePage, safePageSize,
+                (long) safePage * safePageSize < total)));
     }
 
     @PostMapping("/admin/banners")
@@ -115,10 +117,13 @@ public class OperationsController {
     public ResponseEntity<Result<PageResult<Map<String, Object>>>> adminFriendLinks(
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
-        List<FriendLink> links = operationsAppService.adminFriendLinks(PageParams.requirePage(page),
-                PageParams.requirePageSize(pageSize));
+        int safePage = PageParams.requirePage(page);
+        int safePageSize = PageParams.requirePageSize(pageSize);
+        List<FriendLink> links = operationsAppService.adminFriendLinks(safePage, safePageSize);
+        long total = operationsAppService.countFriendLinks();
         return ResponseEntity.ok(Result.ok(new PageResult<>(
-                links.stream().map(this::linkVo).toList(), links.size(), page, pageSize, false)));
+                links.stream().map(this::linkVo).toList(), total, safePage, safePageSize,
+                (long) safePage * safePageSize < total)));
     }
 
     @PostMapping("/admin/friend-links")

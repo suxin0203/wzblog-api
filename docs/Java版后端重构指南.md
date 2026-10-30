@@ -745,7 +745,7 @@ public class WebConfig implements WebMvcConfigurer {
 | 守卫 | 首轮命中站点数据意图正则但模型没调工具 → 打回强制重试一次 |
 | 会话 | `sessionId`（UUID）由服务端生成/续用；`wz_ai_sessions` 记会话，`wz_ai_messages` 逐条落库（含 tool 消息与耗时）；游客 user_id 为 NULL |
 | 限流 | 每 IP 10 次/分钟（内存 Map），超限 HTTP 429 |
-| 长度 | 单问 ≤500 字 |
+| 长度 | 单问 ≤600 字 |
 | 断开 | 客户端断开（`close` 事件）→ 取消对上游的请求 |
 
 **SSE 事件协议**（`Content-Type: text/event-stream`，`X-Accel-Buffering: no`；每条 `data: <JSON>\n\n`）：

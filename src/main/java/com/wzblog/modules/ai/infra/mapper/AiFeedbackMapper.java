@@ -37,12 +37,16 @@ public interface AiFeedbackMapper extends BaseMapper<AiFeedback> {
     @Select("""
             SELECT COUNT(*) FROM ai_feedbacks
             WHERE rating = 1 AND created_at >= #{from} AND created_at < #{to}
+              AND EXISTS (SELECT 1 FROM ai_messages m JOIN ai_sessions s ON s.id = m.session_id
+                          WHERE m.id = ai_feedbacks.message_id AND s.deleted_at IS NULL)
             """)
     long countPositive(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     @Select("""
             SELECT COUNT(*) FROM ai_feedbacks
             WHERE rating = -1 AND created_at >= #{from} AND created_at < #{to}
+              AND EXISTS (SELECT 1 FROM ai_messages m JOIN ai_sessions s ON s.id = m.session_id
+                          WHERE m.id = ai_feedbacks.message_id AND s.deleted_at IS NULL)
             """)
     long countNegative(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

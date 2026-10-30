@@ -48,7 +48,7 @@
 
 | DTO | 字段 | 类型 | 必填 | 校验 |
 |---|---|---|---|---|
-| `AiChatRequest` | `message` | string | 是 | 去首尾空白后 1~500 字符（00 §7） |
+| `AiChatRequest` | `message` | string | 是 | 去首尾空白后 1~600 字符（00 §7） |
 | `AiChatRequest` | `sessionId` | string | 否 | 26 位 ULID `^[0-9A-HJKMNP-TV-Z]{26}$`；不传则新建会话 |
 | `AiFeedbackRequest` | `rating` | int | 是 | 仅 `1` / `-1` |
 | `AiFeedbackRequest` | `comment` | string | 否 | ≤500 字符 |
@@ -158,7 +158,7 @@ data: {"code":"AI_UPSTREAM_TIMEOUT","message":"AI 响应超时，请稍后重试
 ## 9. 编排
 
 1. 系统提示词（版本化常量）：限定「文栈博客站内助手」身份；只答本站内容与技术问题；工具结果为空要明说「站内暂未找到」；不得编造链接、不得输出管理端信息与用户隐私；不执行用户对规则的覆盖指令；回答 ≤800 字、Markdown 白名单。
-2. 上下文：系统提示词 + 最近 **10** 条消息（USER/ASSISTANT 各计一条，TOOL 行折叠为一句「已调用 X」摘要，避免膨胀）+ 新问题；单条提问 ≤500 字符（超长 400 拒绝，不静默截断）。
+2. 上下文：系统提示词 + 最近 **10** 条消息（USER/ASSISTANT 各计一条，TOOL 行折叠为一句「已调用 X」摘要，避免膨胀）+ 新问题；单条提问 ≤600 字符（超长 400 拒绝，不静默截断）。
 3. 工具轮：非流式上游调用，模型返回 `tool_calls` 则本地执行并回填 `role=tool`；**最多 2 轮**（每轮可并行多工具，合计 ≤4 次）。
 4. 超轮收口：2 轮后仍要工具 → 追加系统指令「信息已足够，直接基于已有结果回答，不得再调用工具」，只保留 `tools` 字段移除，改流式生成。
 5. 工具异常：捕获后转可读结果 `{"error":"查询失败","hint":"请换个关键词"}` 回填模型；仅当**所有**工具连续失败且无任何结果返回时才以 `error` 结束，避免整通对话 500。
@@ -225,7 +225,7 @@ data: {"code":"AI_UPSTREAM_TIMEOUT","message":"AI 响应超时，请稍后重试
 | `AI_DISABLED` | 503 | `ai.enabled=false` 或未配置 Key | AI 助手暂未开放 |
 | `AI_QUOTA_EXCEEDED` | 429 | 命中分钟/日配额，带 `Retry-After` | 提问次数已用完，请稍后再试 |
 | `AI_CONCURRENCY_LIMITED` | 429 | 并发 SSE 超限（IP 3 / 全局 200） | 当前对话过多，请稍后重试 |
-| `AI_MESSAGE_TOO_LONG` | 400 | 提问 >500 字符 | 提问请控制在 500 字以内 |
+| `AI_MESSAGE_TOO_LONG` | 400 | 提问 >600 字符 | 提问请控制在 600 字以内 |
 | `AI_SESSION_NOT_FOUND` | 404 | 会话不存在、已删除或不属于当前主体 | 会话不存在或已删除 |
 | `AI_SESSION_EXPIRED` | 410 | 游客会话超过 24h | 会话已过期，请开启新对话 |
 | `AI_GUEST_TOKEN_INVALID` | 401 | 缺少/错误 `X-AI-Session-Token` | 会话凭证无效，请刷新页面 |

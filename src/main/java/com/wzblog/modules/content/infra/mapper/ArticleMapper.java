@@ -32,6 +32,9 @@ public interface ArticleMapper extends BaseMapper<Article> {
     String PUBLIC_FILTER = " a.status = 'PUBLISHED' AND a.visibility = 'PUBLIC' "
             + "AND a.deleted_at IS NULL AND a.published_at IS NOT NULL ";
 
+    /** 公开可见且非置顶：信息流普通列表与归档计数共用，保证计数=明细。 */
+    String PUBLIC_UNPINNED_FILTER = PUBLIC_FILTER + " AND a.is_pinned = 0 ";
+
     @Select("SELECT * FROM articles WHERE slug = #{slug}")
     Article selectBySlug(@Param("slug") String slug);
 
@@ -43,14 +46,14 @@ public interface ArticleMapper extends BaseMapper<Article> {
             SELECT
             """ + LIST_COLUMNS + """
             FROM articles a
-            WHERE """ + PUBLIC_FILTER + """
-              AND a.is_pinned = 0
+            WHERE """ + PUBLIC_UNPINNED_FILTER + """
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="tagId != null">
               AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id = a.id AND at.tag_id = #{tagId})
             </if>
             <if test="keyword != null and keyword != ''">
-              AND (a.title LIKE CONCAT(#{keyword}, '%') OR a.summary LIKE CONCAT(#{keyword}, '%'))
+              AND (a.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+                   OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             </if>
             <if test="from != null"> AND a.published_at &gt;= #{from}</if>
             <if test="to != null"> AND a.published_at &lt; #{to}</if>
@@ -119,13 +122,16 @@ public interface ArticleMapper extends BaseMapper<Article> {
                                      @Param("tagId") Long tagId,
                                      @Param("limit") int limit);
 
+    // 用户搜索统一为包含匹配；LIKE '%kw%' 无法走 B-tree/全文索引，当前数据量可接受（T-006 性能护栏）。
+    // 有意不排除置顶（D24）：search 与 feed 的置顶口径差异保留。
     @Select("""
             <script>
             SELECT
             """ + LIST_COLUMNS + """
             FROM articles a
             WHERE """ + PUBLIC_FILTER + """
-              AND a.title LIKE CONCAT('%', #{keyword}, '%')
+              AND (a.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+                   OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="tagId != null">
               AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id = a.id AND at.tag_id = #{tagId})
@@ -167,26 +173,27 @@ public interface ArticleMapper extends BaseMapper<Article> {
 
     @Select("""
             <script>
-            SELECT YEAR(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) AS y, COUNT(*) AS cnt
+            SELECT YEAR(CONVERT_TZ(a.published_at, '+00:00', #{tzOffset})) AS y, COUNT(*) AS cnt
             FROM articles a
-            WHERE """ + PUBLIC_FILTER + """
+            WHERE """ + PUBLIC_UNPINNED_FILTER + """
             GROUP BY y
             ORDER BY y DESC
             </script>
             """)
-    List<Map<String, Object>> selectArchiveYears();
+    List<Map<String, Object>> selectArchiveYears(@Param("tzOffset") String tzOffset);
 
     @Select("""
             <script>
-            SELECT MONTH(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) AS m, COUNT(*) AS cnt
+            SELECT MONTH(CONVERT_TZ(a.published_at, '+00:00', #{tzOffset})) AS m, COUNT(*) AS cnt
             FROM articles a
-            WHERE """ + PUBLIC_FILTER + """
-              AND YEAR(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) = #{year}
+            WHERE """ + PUBLIC_UNPINNED_FILTER + """
+              AND YEAR(CONVERT_TZ(a.published_at, '+00:00', #{tzOffset})) = #{year}
             GROUP BY m
             ORDER BY m DESC
             </script>
             """)
-    List<Map<String, Object>> selectArchiveMonths(@Param("year") int year);
+    List<Map<String, Object>> selectArchiveMonths(@Param("year") int year,
+                                                  @Param("tzOffset") String tzOffset);
 
     @Select("""
             <script>
@@ -244,7 +251,8 @@ public interface ArticleMapper extends BaseMapper<Article> {
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="authorId != null"> AND a.author_id = #{authorId}</if>
             <if test="keyword != null and keyword != ''">
-              AND (a.title LIKE CONCAT('%', #{keyword}, '%') OR a.summary LIKE CONCAT('%', #{keyword}, '%'))
+              AND (a.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+                   OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             </if>
             </script>
             """)
@@ -272,7 +280,8 @@ public interface ArticleMapper extends BaseMapper<Article> {
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="authorId != null"> AND a.author_id = #{authorId}</if>
             <if test="keyword != null and keyword != ''">
-              AND (a.title LIKE CONCAT('%', #{keyword}, '%') OR a.summary LIKE CONCAT('%', #{keyword}, '%'))
+              AND (a.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+                   OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             </if>
             ORDER BY
             <choose>

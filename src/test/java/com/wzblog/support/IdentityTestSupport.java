@@ -49,7 +49,7 @@ public abstract class IdentityTestSupport {
     @org.springframework.test.context.DynamicPropertySource
     static void registerProperties(org.springframework.test.context.DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", () -> MYSQL.getJdbcUrl()
-                + "?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true");
+                + "?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&useSSL=false&allowPublicKeyRetrieval=true");
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
         registry.add("spring.data.redis.host", REDIS::getHost);

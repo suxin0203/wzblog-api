@@ -529,26 +529,138 @@ class ContentIntegrationTest extends IdentityTestSupport {
     // ------------------------------------------------------------ 读取
 
     @Test
-    void searchRanksTitleHitsAndDegradesForShortKeyword() {
+    void searchUsesContainsSemanticsAndDegradesForShortKeyword() {
         String token = adminToken();
         String keyword = "橘子猫";
         String titleHit = keyword + unique("t");
         HttpResult titled = createArticle(token, articleBody(titleHit, "正文没有那个词"));
         publish(titled.data().path("id").asText(), token);
-        HttpResult bodyOnly = createArticle(token, articleBody(unique("body"), "正文提到了" + keyword));
+
+        HttpResult summaryHit = createArticle(token, articleBody(unique("s"), "正文",
+                Map.of("summary", "摘要提到了" + keyword)));
+        publish(summaryHit.data().path("id").asText(), token);
+
+        HttpResult bodyOnly = createArticle(token, articleBody(unique("body"), "正文提到了" + keyword,
+                Map.of("summary", "摘要不含关键词")));
         publish(bodyOnly.data().path("id").asText(), token);
 
         HttpResult result = get("/api/v1/articles/search?keyword=" + keyword + "&size=20", null);
         assertThat(result.status()).isEqualTo(200);
         assertThat(result.data().path("degraded").asBoolean()).isFalse();
         List<String> ids = listIds(result.data().path("list"));
-        assertThat(ids).contains(titled.data().path("id").asText());
-        assertThat(ids.indexOf(titled.data().path("id").asText()))
-                .isLessThan(ids.indexOf(bodyOnly.data().path("id").asText()));
+        assertThat(ids).contains(titled.data().path("id").asText(), summaryHit.data().path("id").asText());
+        assertThat(ids).doesNotContain(bodyOnly.data().path("id").asText());
+
+        // 与信息流包含匹配结果一致（同关键词、同页大小）
+        HttpResult feed = get("/api/v1/articles?keyword=" + keyword + "&size=20", null);
+        assertThat(listIds(feed.data().path("list"))).isEqualTo(ids);
 
         HttpResult degraded = get("/api/v1/articles/search?keyword=" + keyword.substring(0, 1), null);
         assertThat(degraded.status()).isEqualTo(200);
         assertThat(degraded.data().path("degraded").asBoolean()).isTrue();
+    }
+
+    @Test
+    void archiveCountsExcludePinnedAndPinnedEndpointIsOnlyPath() {
+        String token = adminToken();
+        String keyword = unique("pin");
+        List<Long> ids = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            HttpResult created = createArticle(token,
+                    articleBody((i == 0 ? keyword + " " : "T007 ") + unique("a"), "archive pinned test"));
+            long id = created.data().path("id").asLong();
+            publish(String.valueOf(id), token);
+            jdbc.update("UPDATE articles SET published_at = '2040-06-15 00:00:00' WHERE id = ?", id);
+            ids.add(id);
+        }
+        long pinnedId = ids.get(0);
+
+        assertThat(post("/api/v1/articles/" + pinnedId + "/pin", Map.of(), token).status())
+                .isEqualTo(200);
+        HttpResult archive = get("/api/v1/articles/archive?year=2040", null);
+        int counted = 0;
+        for (JsonNode item : archive.data()) {
+            counted += item.path("count").asInt();
+        }
+        assertThat(counted).as("归档计数应排除置顶").isEqualTo(3);
+
+        HttpResult feed = get("/api/v1/articles?year=2040&size=10", null);
+        List<String> feedIds = listIds(feed.data().path("list"));
+        assertThat(feedIds).hasSize(3).doesNotContain(String.valueOf(pinnedId));
+
+        // 置顶唯一读取路径：/articles/pinned；size 越界按 1~10 夹取，默认 10
+        HttpResult pinnedList = get("/api/v1/articles/pinned?limit=3", null);
+        assertThat(pinnedList.status()).isEqualTo(200);
+        assertThat(listIds(pinnedList.data())).contains(String.valueOf(pinnedId));
+
+        HttpResult pinnedDefault = get("/api/v1/articles/pinned", null);
+        assertThat(pinnedDefault.status()).isEqualTo(200);
+        assertThat(pinnedDefault.data().size()).isLessThanOrEqualTo(10);
+
+        HttpResult pinnedOver = get("/api/v1/articles/pinned?limit=999", null);
+        assertThat(pinnedOver.status()).isEqualTo(200);
+        assertThat(pinnedOver.data().size()).isLessThanOrEqualTo(10);
+
+        HttpResult pinnedZero = get("/api/v1/articles/pinned?limit=0", null);
+        assertThat(pinnedZero.status()).isEqualTo(200);
+        assertThat(pinnedZero.data().size()).isLessThanOrEqualTo(1);
+
+        HttpResult search = get("/api/v1/articles/search?keyword=" + keyword + "&size=10", null);
+        assertThat(listIds(search.data().path("list"))).contains(String.valueOf(pinnedId));
+
+        assertThat(delete("/api/v1/articles/" + pinnedId + "/pin", token).status()).isEqualTo(200);
+        HttpResult archiveAfter = get("/api/v1/articles/archive?year=2040", null);
+        int countedAfter = 0;
+        for (JsonNode item : archiveAfter.data()) {
+            countedAfter += item.path("count").asInt();
+        }
+        assertThat(countedAfter).isEqualTo(4);
+
+        for (Long id : ids) {
+            delete("/api/v1/articles/" + id, token);
+            delete("/api/v1/admin/articles/" + id + "/purge", token);
+        }
+    }
+
+    @Test
+    void archiveConvertsUtcToShanghaiAcrossYearBoundary() {
+        String token = adminToken();
+        HttpResult crossYear = createArticle(token, articleBody(unique("跨年"), "utc 12-31 23:30"));
+        String crossYearId = crossYear.data().path("id").asText();
+        publish(crossYearId, token);
+        jdbc.update("UPDATE articles SET published_at = '2026-12-31 23:30:00' WHERE id = ?",
+                Long.valueOf(crossYearId));
+
+        HttpResult crossDay = createArticle(token, articleBody(unique("跨日"), "utc 01-01 16:00"));
+        String crossDayId = crossDay.data().path("id").asText();
+        publish(crossDayId, token);
+        jdbc.update("UPDATE articles SET published_at = '2026-01-01 16:00:00' WHERE id = ?",
+                Long.valueOf(crossDayId));
+
+        // UTC 12-31 23:30 → 上海 2027-01-01 07:30
+        HttpResult y2027 = get("/api/v1/articles/archive?year=2027", null);
+        int jan2027 = 0;
+        for (JsonNode item : y2027.data()) {
+            if (item.path("month").asInt() == 1) {
+                jan2027 += item.path("count").asInt();
+            }
+        }
+        assertThat(jan2027).isEqualTo(1);
+
+        // UTC 2026-01-01 16:00 → 上海 2026-01-02 00:00
+        HttpResult y2026 = get("/api/v1/articles/archive?year=2026", null);
+        int jan2026 = 0;
+        for (JsonNode item : y2026.data()) {
+            if (item.path("month").asInt() == 1) {
+                jan2026 += item.path("count").asInt();
+            }
+        }
+        assertThat(jan2026).isEqualTo(1);
+
+        delete("/api/v1/articles/" + crossYearId, token);
+        delete("/api/v1/admin/articles/" + crossYearId + "/purge", token);
+        delete("/api/v1/articles/" + crossDayId, token);
+        delete("/api/v1/admin/articles/" + crossDayId + "/purge", token);
     }
 
     @Test

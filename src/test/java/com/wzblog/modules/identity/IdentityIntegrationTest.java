@@ -357,6 +357,32 @@ class IdentityIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void updateProfileAllowsMissingNicknamePerContract() {
+        String username = unique("prf2");
+        register(username, PASSWORD, null);
+        String access = accessToken(username, PASSWORD);
+
+        HttpResult before = get("/api/v1/users/me", access);
+        String originalNickname = before.data().path("nickname").asText();
+
+        // 契约 UpdateProfileRequest.required 为空：仅改 bio 不应 400，昵称保持原值
+        HttpResult bioOnly = put("/api/v1/users/me", Map.of("bio", "only bio"), access);
+        assertThat(bioOnly.status()).as("bioOnly: %s", bioOnly.body()).isEqualTo(200);
+        assertThat(bioOnly.data().path("nickname").asText()).isEqualTo(originalNickname);
+        assertThat(bioOnly.data().path("bio").asText()).isEqualTo("only bio");
+
+        // 空字符串昵称同样保持原值（不落空昵称）
+        HttpResult blankNickname = put("/api/v1/users/me",
+                Map.of("nickname", "", "bio", "blank nickname"), access);
+        assertThat(blankNickname.status()).as("blankNickname: %s", blankNickname.body()).isEqualTo(200);
+        assertThat(blankNickname.data().path("nickname").asText()).isEqualTo(originalNickname);
+
+        // 超长昵称仍拒绝
+        HttpResult tooLong = put("/api/v1/users/me", Map.of("nickname", "x".repeat(31)), access);
+        assertThat(tooLong.status()).isEqualTo(400);
+    }
+
+    @Test
     void changePasswordRequiresOldPasswordAndRevokesAllSessions() {
         String username = unique("pwd");
         register(username, PASSWORD, null);
