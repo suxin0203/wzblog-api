@@ -5,6 +5,7 @@ import com.wzblog.common.api.PageResult;
 import com.wzblog.common.api.PageParams;
 import com.wzblog.common.api.Result;
 import com.wzblog.common.error.BusinessException;
+import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.interaction.api.dto.NotificationReadRequest;
 import com.wzblog.modules.interaction.api.vo.NotificationVO;
@@ -12,7 +13,10 @@ import com.wzblog.modules.interaction.api.vo.ReadResultVO;
 import com.wzblog.modules.interaction.api.vo.UnreadCountVO;
 import com.wzblog.modules.interaction.app.NotificationAppService;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -33,6 +37,8 @@ import java.io.IOException;
 @RestController
 @RequestMapping("/notifications")
 public class NotificationController {
+
+    private static final Logger log = LoggerFactory.getLogger(NotificationController.class);
 
     private final NotificationAppService notificationAppService;
     private final ObjectMapper objectMapper;
@@ -87,9 +93,21 @@ public class NotificationController {
         }
     }
 
-    /** 浏览器断网/刷新导致 SSE 写入失败：连接已结束，按调试日志处理，避免 ERROR 堆栈。 */
+    /** 仅 SSE 写流会因客户端断连抛 IOException；其他端点按普通 500 处理。 */
     @org.springframework.web.bind.annotation.ExceptionHandler(IOException.class)
-    public void handleClientAbort(IOException ex) {
-        // no-op：响应已不可用，无需写回
+    public void handleClientAbort(IOException ex, HttpServletRequest request,
+                                  HttpServletResponse response) throws IOException {
+        if (request.getRequestURI().endsWith("/notifications/stream")) {
+            log.debug("SSE client aborted: {}", ex.getMessage());
+            return;
+        }
+        log.error("Notification IO error", ex);
+        if (!response.isCommitted()) {
+            response.setStatus(500);
+            response.setCharacterEncoding("UTF-8");
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.getWriter().write(objectMapper.writeValueAsString(
+                    Result.fail(ErrorCode.COMMON_INTERNAL_ERROR)));
+        }
     }
 }

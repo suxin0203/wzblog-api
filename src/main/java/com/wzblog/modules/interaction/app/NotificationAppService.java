@@ -166,6 +166,7 @@ public class NotificationAppService {
     public SseEmitter openStream(CurrentUser user, String lastEventId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         if (!sseRegistry.register(user.id(), emitter)) {
+            // 淘汰策略下正常不可达（D14），仅作并发/极端情况兜底，保留 429 + Retry-After
             throw new BusinessException(ErrorCode.NOTIFY_STREAM_LIMITED,
                     ErrorCode.NOTIFY_STREAM_LIMITED.defaultMessage(),
                     com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry.SSE_RETRY_AFTER_SECONDS);
