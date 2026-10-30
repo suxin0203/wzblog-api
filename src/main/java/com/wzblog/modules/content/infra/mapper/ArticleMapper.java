@@ -178,26 +178,27 @@ public interface ArticleMapper extends BaseMapper<Article> {
 
     @Select("""
             <script>
-            SELECT YEAR(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) AS y, COUNT(*) AS cnt
+            SELECT YEAR(CONVERT_TZ(a.published_at, '+00:00', #{tzOffset})) AS y, COUNT(*) AS cnt
             FROM articles a
             WHERE """ + PUBLIC_UNPINNED_FILTER + """
             GROUP BY y
             ORDER BY y DESC
             </script>
             """)
-    List<Map<String, Object>> selectArchiveYears();
+    List<Map<String, Object>> selectArchiveYears(@Param("tzOffset") String tzOffset);
 
     @Select("""
             <script>
-            SELECT MONTH(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) AS m, COUNT(*) AS cnt
+            SELECT MONTH(CONVERT_TZ(a.published_at, '+00:00', #{tzOffset})) AS m, COUNT(*) AS cnt
             FROM articles a
             WHERE """ + PUBLIC_UNPINNED_FILTER + """
-              AND YEAR(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) = #{year}
+              AND YEAR(CONVERT_TZ(a.published_at, '+00:00', #{tzOffset})) = #{year}
             GROUP BY m
             ORDER BY m DESC
             </script>
             """)
-    List<Map<String, Object>> selectArchiveMonths(@Param("year") int year);
+    List<Map<String, Object>> selectArchiveMonths(@Param("year") int year,
+                                                  @Param("tzOffset") String tzOffset);
 
     @Select("""
             <script>

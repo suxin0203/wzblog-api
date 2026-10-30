@@ -24,3 +24,7 @@
 - D27 置顶双路径（/articles/pinned 与 feed?pinned）收口归 T-010，期间禁止新增调用 feed?pinned
 - D28 置顶实时化走 SSE，不做轮询
 - D29 时区口径=D2-A：前端提交侧转 UTC，后端全程 UTC，不做后端时区解释
+- D30 手工 SQL 必须 SET time_zone='+00:00'（T-009 banners.updated_at 修正已按此执行）
+- D31 A2（MySQL 全局时区收口/重建容器）记为 E-001 待办，本轮不执行
+- D32 end_at 1 秒缝（end_at > now 与 23:59:59 展示）待 T-011
+- D33 DDL 默认值历史行不回填；49 个默认时间列中 8 列/12 行呈近期 +8 疑似（清单见 backup/T-009-20261030-222303/timestamp_suspect_sample.txt）

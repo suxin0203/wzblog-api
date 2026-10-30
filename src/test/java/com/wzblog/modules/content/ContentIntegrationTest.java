@@ -613,6 +613,47 @@ class ContentIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void archiveConvertsUtcToShanghaiAcrossYearBoundary() {
+        String token = adminToken();
+        HttpResult crossYear = createArticle(token, articleBody(unique("跨年"), "utc 12-31 23:30"));
+        String crossYearId = crossYear.data().path("id").asText();
+        publish(crossYearId, token);
+        jdbc.update("UPDATE articles SET published_at = '2026-12-31 23:30:00' WHERE id = ?",
+                Long.valueOf(crossYearId));
+
+        HttpResult crossDay = createArticle(token, articleBody(unique("跨日"), "utc 01-01 16:00"));
+        String crossDayId = crossDay.data().path("id").asText();
+        publish(crossDayId, token);
+        jdbc.update("UPDATE articles SET published_at = '2026-01-01 16:00:00' WHERE id = ?",
+                Long.valueOf(crossDayId));
+
+        // UTC 12-31 23:30 → 上海 2027-01-01 07:30
+        HttpResult y2027 = get("/api/v1/articles/archive?year=2027", null);
+        int jan2027 = 0;
+        for (JsonNode item : y2027.data()) {
+            if (item.path("month").asInt() == 1) {
+                jan2027 += item.path("count").asInt();
+            }
+        }
+        assertThat(jan2027).isEqualTo(1);
+
+        // UTC 2026-01-01 16:00 → 上海 2026-01-02 00:00
+        HttpResult y2026 = get("/api/v1/articles/archive?year=2026", null);
+        int jan2026 = 0;
+        for (JsonNode item : y2026.data()) {
+            if (item.path("month").asInt() == 1) {
+                jan2026 += item.path("count").asInt();
+            }
+        }
+        assertThat(jan2026).isEqualTo(1);
+
+        delete("/api/v1/articles/" + crossYearId, token);
+        delete("/api/v1/admin/articles/" + crossYearId + "/purge", token);
+        delete("/api/v1/articles/" + crossDayId, token);
+        delete("/api/v1/admin/articles/" + crossDayId + "/purge", token);
+    }
+
+    @Test
     void topAndArchiveQueriesAreReachable() {
         String token = adminToken();
         String id = createArticle(token, articleBody(unique("榜单"), "榜单正文")).data().path("id").asText();

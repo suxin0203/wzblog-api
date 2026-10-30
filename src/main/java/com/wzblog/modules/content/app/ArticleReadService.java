@@ -173,11 +173,11 @@ public class ArticleReadService {
         }
         List<ArchiveItemVO> result = new ArrayList<>();
         if (year == null) {
-            for (Map<String, Object> row : articleMapper.selectArchiveYears()) {
+            for (Map<String, Object> row : articleMapper.selectArchiveYears(BUSINESS_ZONE_OFFSET)) {
                 result.add(new ArchiveItemVO(intValue(row, "y", "Y"), null, longValue(row, "cnt", "CNT")));
             }
         } else {
-            for (Map<String, Object> row : articleMapper.selectArchiveMonths(year)) {
+            for (Map<String, Object> row : articleMapper.selectArchiveMonths(year, BUSINESS_ZONE_OFFSET)) {
                 result.add(new ArchiveItemVO(year, intValue(row, "m", "M"), longValue(row, "cnt", "CNT")));
             }
         }
@@ -391,6 +391,8 @@ public class ArticleReadService {
     private String cacheKey(Article article) {
         return "content:article:" + article.getId() + ":v" + article.getVersion();
     }
+
+    private static final String BUSINESS_ZONE_OFFSET = "+08:00";
 
     /**
      * LIKE 包含匹配转义：! 为 ESCAPE 字符，% _ 按字面匹配；反斜杠在 ESCAPE '!' 下不再是转义符。
