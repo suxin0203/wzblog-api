@@ -32,6 +32,9 @@ public interface ArticleMapper extends BaseMapper<Article> {
     String PUBLIC_FILTER = " a.status = 'PUBLISHED' AND a.visibility = 'PUBLIC' "
             + "AND a.deleted_at IS NULL AND a.published_at IS NOT NULL ";
 
+    /** 公开可见且非置顶：信息流普通列表与归档计数共用，保证计数=明细。 */
+    String PUBLIC_UNPINNED_FILTER = PUBLIC_FILTER + " AND a.is_pinned = 0 ";
+
     @Select("SELECT * FROM articles WHERE slug = #{slug}")
     Article selectBySlug(@Param("slug") String slug);
 
@@ -44,7 +47,10 @@ public interface ArticleMapper extends BaseMapper<Article> {
             """ + LIST_COLUMNS + """
             FROM articles a
             WHERE """ + PUBLIC_FILTER + """
-              AND a.is_pinned = 0
+            <choose>
+              <when test="pinned != null and pinned"> AND a.is_pinned = 1</when>
+              <otherwise> AND a.is_pinned = 0</otherwise>
+            </choose>
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="tagId != null">
               AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id = a.id AND at.tag_id = #{tagId})
@@ -69,6 +75,7 @@ public interface ArticleMapper extends BaseMapper<Article> {
                              @Param("to") LocalDateTime to,
                              @Param("cursorTime") LocalDateTime cursorTime,
                              @Param("cursorId") Long cursorId,
+                             @Param("pinned") Boolean pinned,
                              @Param("limit") int limit);
 
     @Select("""
@@ -121,6 +128,7 @@ public interface ArticleMapper extends BaseMapper<Article> {
                                      @Param("limit") int limit);
 
     // 用户搜索统一为包含匹配；LIKE '%kw%' 无法走 B-tree/全文索引，当前数据量可接受（T-006 性能护栏）。
+    // 有意不排除置顶（D24）：search 与 feed 的置顶口径差异保留。
     @Select("""
             <script>
             SELECT
@@ -172,7 +180,7 @@ public interface ArticleMapper extends BaseMapper<Article> {
             <script>
             SELECT YEAR(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) AS y, COUNT(*) AS cnt
             FROM articles a
-            WHERE """ + PUBLIC_FILTER + """
+            WHERE """ + PUBLIC_UNPINNED_FILTER + """
             GROUP BY y
             ORDER BY y DESC
             </script>
@@ -183,7 +191,7 @@ public interface ArticleMapper extends BaseMapper<Article> {
             <script>
             SELECT MONTH(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) AS m, COUNT(*) AS cnt
             FROM articles a
-            WHERE """ + PUBLIC_FILTER + """
+            WHERE """ + PUBLIC_UNPINNED_FILTER + """
               AND YEAR(DATE_ADD(a.published_at, INTERVAL 8 HOUR)) = #{year}
             GROUP BY m
             ORDER BY m DESC

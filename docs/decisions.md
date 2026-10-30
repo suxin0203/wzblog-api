@@ -15,3 +15,8 @@
 - D13 IOException 捕获收窄
 - D14 429 兜底保留
 - D15 Vite HMR 半更新=改 hook 后重启 Vite（运维约定，不改代码）
+- D21 search 排序=时间倒序（相关性排序已降级，能力损失已知；恢复需放宽"id 序列一致"验收口径）
+- D22 全文索引保留，AI 工具仍在使用
+- D23 搜索链路死代码暂留，待联合回归后统一清理
+- D24 search 不排除置顶=有意差异
+- D25 每轮 preflight：health + MySQL/Redis 连通

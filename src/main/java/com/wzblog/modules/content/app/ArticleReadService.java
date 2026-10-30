@@ -87,8 +87,24 @@ public class ArticleReadService {
     }
 
     public CursorPage<ArticleListItemVO> feed(String keyword, String categoryId, String tagId,
-                                              Integer year, Integer month, String cursor, Integer size) {
-        int limit = pageSize(size, 20, 50);
+                                              Integer year, Integer month, Boolean pinned,
+                                              String cursor, Integer size) {
+        if (Boolean.FALSE.equals(pinned)) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR,
+                    "pinned 仅支持 true 或不传", null);
+        }
+        boolean pinnedOnly = Boolean.TRUE.equals(pinned);
+        int limit;
+        if (pinnedOnly) {
+            int requested = size == null ? 3 : size;
+            if (requested < 1 || requested > 10) {
+                throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR,
+                        "pinned 模式下 size 需为 1~10", null);
+            }
+            limit = requested;
+        } else {
+            limit = pageSize(size, 20, 50);
+        }
         if (keyword != null && keyword.length() > 50) {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "keyword 不能超过 50 字符", null);
         }
@@ -104,7 +120,7 @@ public class ArticleReadService {
         List<Article> rows = articleMapper.selectFeed(
                 Ids.parseNullable(categoryId), Ids.parseNullable(tagId), keywordFilter,
                 range == null ? null : range.from(), range == null ? null : range.to(),
-                cursorTime, cursorId, limit + 1);
+                cursorTime, cursorId, pinnedOnly, limit + 1);
         boolean hasNext = rows.size() > limit;
         if (hasNext) {
             rows = new ArrayList<>(rows.subList(0, limit));

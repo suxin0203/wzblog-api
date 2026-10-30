@@ -561,6 +561,58 @@ class ContentIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void archiveCountsExcludePinnedAndFeedSupportsPinnedParam() {
+        String token = adminToken();
+        String keyword = unique("pin");
+        List<Long> ids = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            HttpResult created = createArticle(token,
+                    articleBody((i == 0 ? keyword + " " : "T007 ") + unique("a"), "archive pinned test"));
+            long id = created.data().path("id").asLong();
+            publish(String.valueOf(id), token);
+            jdbc.update("UPDATE articles SET published_at = '2040-06-15 00:00:00' WHERE id = ?", id);
+            ids.add(id);
+        }
+        long pinnedId = ids.get(0);
+
+        assertThat(post("/api/v1/articles/" + pinnedId + "/pin", Map.of(), token).status())
+                .isEqualTo(200);
+        HttpResult archive = get("/api/v1/articles/archive?year=2040", null);
+        int counted = 0;
+        for (JsonNode item : archive.data()) {
+            counted += item.path("count").asInt();
+        }
+        assertThat(counted).as("归档计数应排除置顶").isEqualTo(3);
+
+        HttpResult feed = get("/api/v1/articles?year=2040&size=10", null);
+        List<String> feedIds = listIds(feed.data().path("list"));
+        assertThat(feedIds).hasSize(3).doesNotContain(String.valueOf(pinnedId));
+
+        HttpResult pinnedFeed = get("/api/v1/articles?pinned=true&size=3", null);
+        assertThat(pinnedFeed.status()).isEqualTo(200);
+        assertThat(listIds(pinnedFeed.data().path("list"))).contains(String.valueOf(pinnedId));
+
+        assertThat(get("/api/v1/articles?pinned=false", null).status()).isEqualTo(400);
+        assertThat(get("/api/v1/articles?pinned=true&size=11", null).status()).isEqualTo(400);
+
+        HttpResult search = get("/api/v1/articles/search?keyword=" + keyword + "&size=10", null);
+        assertThat(listIds(search.data().path("list"))).contains(String.valueOf(pinnedId));
+
+        assertThat(delete("/api/v1/articles/" + pinnedId + "/pin", token).status()).isEqualTo(200);
+        HttpResult archiveAfter = get("/api/v1/articles/archive?year=2040", null);
+        int countedAfter = 0;
+        for (JsonNode item : archiveAfter.data()) {
+            countedAfter += item.path("count").asInt();
+        }
+        assertThat(countedAfter).isEqualTo(4);
+
+        for (Long id : ids) {
+            delete("/api/v1/articles/" + id, token);
+            delete("/api/v1/admin/articles/" + id + "/purge", token);
+        }
+    }
+
+    @Test
     void topAndArchiveQueriesAreReachable() {
         String token = adminToken();
         String id = createArticle(token, articleBody(unique("榜单"), "榜单正文")).data().path("id").asText();
