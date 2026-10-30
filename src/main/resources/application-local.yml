@@ -7,3 +7,5 @@ mybatis-plus:
 wzblog:
   auth:
     log-verification-code: true
+  ai:
+    provider: openai
