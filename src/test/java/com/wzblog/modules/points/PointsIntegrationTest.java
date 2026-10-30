@@ -6,9 +6,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.Duration;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,11 +32,23 @@ class PointsIntegrationTest extends IdentityTestSupport {
     @Autowired
     private com.wzblog.modules.points.app.PointsReconcileJob reconcileJob;
 
+    @Autowired
+    private org.springframework.data.redis.core.StringRedisTemplate redis;
+
     // ------------------------------------------------------------ 工具
 
     private HttpResult adjust(String token, long userId, int amount, String reason) {
-        return post("/api/v1/admin/users/" + userId + "/points",
-                Map.of("amount", amount, "reason", reason), token);
+        return adjustWithKey(token, userId, amount, reason, UUID.randomUUID().toString());
+    }
+
+    private HttpResult adjustWithKey(String token, long userId, int amount, String reason,
+                                     String key) {
+        return exchangeWithHeader("POST", "/api/v1/admin/users/" + userId + "/points",
+                Map.of("amount", amount, "reason", reason), token, key);
+    }
+
+    private String adjustRedisKey(String key) {
+        return "points:adjust:idem:" + userId("bootstrap_admin") + ":" + key;
     }
 
     private HttpResult createGoods(String token, Map<String, Object> overrides) {
@@ -577,6 +592,146 @@ class PointsIntegrationTest extends IdentityTestSupport {
         assertThat(detail.status()).isEqualTo(200);
         HttpResult titles = get("/api/v1/titles", null);
         assertThat(titles.status()).isEqualTo(200);
+    }
+
+    @Test
+    void adminAdjustIsIdempotentByKey() {
+        String username = unique("ia");
+        register(username, PASSWORD, null);
+        long userId = userId(username);
+        int before = balance(userId);
+        String key = UUID.randomUUID().toString();
+        String reason = "idem adjust " + unique("r");
+
+        HttpResult first = adjustWithKey(adminToken(), userId, 10, reason, key);
+        HttpResult second = adjustWithKey(adminToken(), userId, 10, reason, key);
+        assertThat(first.status()).as(first.body().toString()).isEqualTo(200);
+        assertThat(second.status()).as(second.body().toString()).isEqualTo(200);
+        assertThat(second.data().toString()).isEqualTo(first.data().toString());
+        assertThat(balance(userId)).isEqualTo(before + 10);
+
+        Long ledgers = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM points_ledger WHERE user_id = ? AND type = 'ADMIN_ADJUST'",
+                Long.class, userId);
+        assertThat(ledgers).isEqualTo(1L);
+        Long audits = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM audit_logs WHERE action = 'POINTS_ADJUST' AND target_id = ? "
+                        + "AND after_json LIKE ?", Long.class, String.valueOf(userId), "%" + reason + "%");
+        assertThat(audits).isEqualTo(1L);
+
+        Long ttl = redis.getExpire(adjustRedisKey(key), TimeUnit.SECONDS);
+        assertThat(ttl).isNotNull().isGreaterThan(86_000L);
+
+        HttpResult missing = post("/api/v1/admin/users/" + userId + "/points",
+                Map.of("amount", 1, "reason", "missing key"), adminToken());
+        assertThat(missing.status()).isEqualTo(400);
+        assertThat(missing.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(missing.body().toString()).contains("缺少幂等键");
+    }
+
+    @Test
+    void adminAdjustConcurrentSameKeyOnlyOnce() throws Exception {
+        String username = unique("ic");
+        register(username, PASSWORD, null);
+        long userId = userId(username);
+        int before = balance(userId);
+        String key = UUID.randomUUID().toString();
+        String reason = "concurrent adjust " + unique("r");
+        String admin = adminToken();
+
+        ExecutorService pool = Executors.newFixedThreadPool(5);
+        CountDownLatch start = new CountDownLatch(1);
+        List<HttpResult> results = Collections.synchronizedList(new java.util.ArrayList<>());
+        for (int i = 0; i < 5; i++) {
+            pool.submit(() -> {
+                start.await();
+                results.add(adjustWithKey(admin, userId, 10, reason, key));
+                return null;
+            });
+        }
+        start.countDown();
+        pool.shutdown();
+        assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(results).hasSize(5);
+        assertThat(results.stream().anyMatch(r -> r.status() == 200)).isTrue();
+        assertThat(results.stream().allMatch(r -> r.status() == 200 || r.status() == 409)).isTrue();
+        assertThat(balance(userId)).isEqualTo(before + 10);
+        Long ledgers = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM points_ledger WHERE user_id = ? AND type = 'ADMIN_ADJUST'",
+                Long.class, userId);
+        assertThat(ledgers).isEqualTo(1L);
+        Long audits = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM audit_logs WHERE action = 'POINTS_ADJUST' AND target_id = ? "
+                        + "AND after_json LIKE ?", Long.class, String.valueOf(userId), "%" + reason + "%");
+        assertThat(audits).isEqualTo(1L);
+    }
+
+    @Test
+    void adminAdjustFailureReleasesIdempotencyKey() {
+        String username = unique("if");
+        register(username, PASSWORD, null);
+        long userId = userId(username);
+        int before = balance(userId);
+        String key = UUID.randomUUID().toString();
+
+        HttpResult failed = adjustWithKey(adminToken(), userId, 0, "fail release", key);
+        assertThat(failed.status()).isEqualTo(400);
+        assertThat(failed.code()).isEqualTo("POINTS_ADJUST_INVALID");
+        assertThat(redis.hasKey(adjustRedisKey(key))).isFalse();
+
+        HttpResult retried = adjustWithKey(adminToken(), userId, 5, "retry release", key);
+        assertThat(retried.status()).as(retried.body().toString()).isEqualTo(200);
+        assertThat(balance(userId)).isEqualTo(before + 5);
+        Long ledgers = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM points_ledger WHERE user_id = ? AND type = 'ADMIN_ADJUST'",
+                Long.class, userId);
+        assertThat(ledgers).isEqualTo(1L);
+    }
+
+    @Test
+    void adminAdjustProcessingStateReturns409WithTtl() {
+        String username = unique("ip");
+        register(username, PASSWORD, null);
+        long userId = userId(username);
+        String key = UUID.randomUUID().toString();
+        redis.opsForValue().set(adjustRedisKey(key), "PROCESSING", Duration.ofSeconds(60));
+
+        HttpResult busy = adjustWithKey(adminToken(), userId, 3, "busy", key);
+        assertThat(busy.status()).isEqualTo(409);
+        assertThat(busy.code()).isEqualTo("POINTS_ADJUST_IN_PROGRESS");
+        Long ttl = redis.getExpire(adjustRedisKey(key), TimeUnit.SECONDS);
+        assertThat(ttl).isNotNull().isBetween(50L, 60L);
+
+        redis.delete(adjustRedisKey(key));
+        HttpResult retried = adjustWithKey(adminToken(), userId, 3, "busy retry", key);
+        assertThat(retried.status()).as(retried.body().toString()).isEqualTo(200);
+    }
+
+    @Test
+    void adminAdjustDifferentOperatorsSameKeyAreIndependent() {
+        String username = unique("ia2");
+        register(username, PASSWORD, null);
+        HttpResult promoted = put("/api/v1/admin/users/" + userId(username),
+                Map.of("nickname", username, "role", "ADMIN", "status", "ACTIVE"), adminToken());
+        assertThat(promoted.status()).as(promoted.body().toString()).isEqualTo(200);
+        String secondAdmin = accessToken(username, PASSWORD);
+
+        String target = unique("it");
+        register(target, PASSWORD, null);
+        long targetId = userId(target);
+        int before = balance(targetId);
+        String key = UUID.randomUUID().toString();
+
+        HttpResult a = adjustWithKey(adminToken(), targetId, 3, "operator one", key);
+        HttpResult b = adjustWithKey(secondAdmin, targetId, 7, "operator two", key);
+        assertThat(a.status()).as(a.body().toString()).isEqualTo(200);
+        assertThat(b.status()).as(b.body().toString()).isEqualTo(200);
+        assertThat(balance(targetId)).isEqualTo(before + 10);
+        Long ledgers = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM points_ledger WHERE user_id = ? AND type = 'ADMIN_ADJUST'",
+                Long.class, targetId);
+        assertThat(ledgers).isEqualTo(2L);
     }
 
     @Test

@@ -28,3 +28,20 @@
 - D31 A2（MySQL 全局时区收口/重建容器）记为 E-001 待办，本轮不执行
 - D32 end_at 1 秒缝（end_at > now 与 23:59:59 展示）待 T-011
 - D33 DDL 默认值历史行不回填；49 个默认时间列中 8 列/12 行呈近期 +8 疑似（清单见 backup/T-009-20261030-222303/timestamp_suspect_sample.txt）
+
+## T-010 管理员调分幂等（2026-10-30）
+
+| 验收 | 实施与证据 | 关联 |
+| --- | --- | --- |
+| I1 同 key 连发 2 次 | 两次均 200 且返回同一条快照（id 5612），余额只 +10；流水 1、审计 1；SUCCESS TTL 86400s | D4 |
+| I2 缺失 Idempotency-Key | 400 COMMON_VALIDATION_ERROR「缺少幂等键」 | D4 |
+| I3 并发 5 个同 key | 1×200 + 4×409 POINTS_ADJUST_IN_PROGRESS；余额仅 +11，流水/审计各 1 | D4 |
+| I4 业务失败释放 | amount=0 → 400，同 key Redis EXISTS=0；同 key 重试 200 成功 | D4 |
+| I5 操作员隔离 | 键=points:adjust:idem:{operatorId}:{clientKey}；两名管理员同 key 各入账 1 次 | D4 |
+| I6 TTL | PROCESSING 60s；SUCCESS 24h（86400s） | D4 |
+| I7 真实 UI 双击 | 30ms 内按钮进入 loading+disabled，仅 1 次 POST；409 提示「调分处理中，请稍候」且弹窗保留 | D4 |
+| I8 回归 | mvn test 138/138；PointsIntegrationTest 22/22；下单/兑换路径未改 | D8 |
+| I9 前端检查 | vue-tsc --noEmit 0；vite build 0 | D8 |
+| I10 文档 | 本节 | — |
+
+> D 编号由规划方唯一分配，执行方不得自行新增或改序。本节仅映射既有编号；如需为“真实 UI 证据”等新增编号，由规划方分配后补录。
