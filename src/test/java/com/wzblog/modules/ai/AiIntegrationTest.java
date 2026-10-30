@@ -232,6 +232,16 @@ class AiIntegrationTest extends IdentityTestSupport {
                 Map.of("message", "长".repeat(601)), null);
         // 未经 SSE 提交前返回 JSON 400
         assertThat(result.status()).isEqualTo(400);
+        assertThat(result.code()).isEqualTo("AI_MESSAGE_TOO_LONG");
+    }
+
+    @Test
+    void messageOverHardLimitFallsBackToCommonValidation() {
+        HttpResult result = post("/api/v1/ai/chat/stream",
+                Map.of("message", "长".repeat(6001)), null);
+        assertThat(result.status()).isEqualTo(400);
+        assertThat(result.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(result.data().path("errors").path("message").asText()).isNotBlank();
     }
 
     @Test

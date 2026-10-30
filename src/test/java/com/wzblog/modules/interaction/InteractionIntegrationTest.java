@@ -39,6 +39,9 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     private com.wzblog.modules.admin.app.SiteConfigService siteConfigService;
 
     @Autowired
+    private com.wzblog.common.error.GlobalExceptionHandler globalExceptionHandler;
+
+    @Autowired
     private com.wzblog.modules.interaction.app.InteractionReconcileService reconcileService;
 
     @Autowired
@@ -459,9 +462,10 @@ class InteractionIntegrationTest extends IdentityTestSupport {
         publicList = get("/api/v1/guestbook", null);
         assertThat(publicList.data().path("list").size()).isEqualTo(1);
 
-        // 超长留言 400
-        assertThat(post("/api/v1/guestbook", Map.of("content", "长".repeat(1001)), null)
-                .status()).isEqualTo(400);
+        // 超长留言 400：入口防爆放行到业务层，返回留言业务码
+        HttpResult tooLong = post("/api/v1/guestbook", Map.of("content", "长".repeat(1001)), null);
+        assertThat(tooLong.status()).isEqualTo(400);
+        assertThat(tooLong.code()).isEqualTo("GUESTBOOK_CONTENT_TOO_LONG");
 
         // 普通用户无审核权限
         String username = unique("gb");
@@ -471,6 +475,71 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     }
 
     // ------------------------------------------------------------ 通知
+
+    @Test
+    void guestbookBoundariesUseBusinessCode() {
+        assertThat(post("/api/v1/guestbook", Map.of("content", "长".repeat(1000)), null)
+                .status()).isEqualTo(200);
+
+        HttpResult over = post("/api/v1/guestbook", Map.of("content", "长".repeat(1001)), null);
+        assertThat(over.status()).isEqualTo(400);
+        assertThat(over.code()).isEqualTo("GUESTBOOK_CONTENT_TOO_LONG");
+
+        HttpResult hard = post("/api/v1/guestbook", Map.of("content", "长".repeat(10001)), null);
+        assertThat(hard.status()).isEqualTo(400);
+        assertThat(hard.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(hard.data().path("errors").path("content").asText()).isNotBlank();
+
+        HttpResult nickname = post("/api/v1/guestbook",
+                Map.of("content", "ok", "nickname", "名".repeat(31)), null);
+        assertThat(nickname.status()).isEqualTo(400);
+        assertThat(nickname.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(nickname.data().path("errors").path("nickname").asText()).isNotBlank();
+    }
+
+    @Test
+    void commentBoundariesUseBusinessCode() {
+        long article = createPublishedArticle(adminToken());
+        assertThat(post("/api/v1/articles/" + article + "/comments",
+                commentBody("长".repeat(2000)), adminToken()).status()).isEqualTo(200);
+
+        HttpResult over = post("/api/v1/articles/" + article + "/comments",
+                commentBody("长".repeat(2001)), adminToken());
+        assertThat(over.status()).isEqualTo(400);
+        assertThat(over.code()).isEqualTo("COMMENT_CONTENT_TOO_LONG");
+
+        HttpResult hard = post("/api/v1/articles/" + article + "/comments",
+                commentBody("长".repeat(20001)), adminToken());
+        assertThat(hard.status()).isEqualTo(400);
+        assertThat(hard.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(hard.data().path("errors").path("content").asText()).isNotBlank();
+
+        Map<String, Object> guest = new LinkedHashMap<>();
+        guest.put("content", "ok");
+        guest.put("guestNickname", "名".repeat(31));
+        HttpResult nickname = post("/api/v1/articles/" + article + "/comments", guest, null);
+        assertThat(nickname.status()).isEqualTo(400);
+        assertThat(nickname.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(nickname.data().path("errors").path("guestNickname").asText()).isNotBlank();
+    }
+
+    @Test
+    void bindExceptionReturnsFieldErrors() {
+        org.springframework.validation.BeanPropertyBindingResult binding =
+                new org.springframework.validation.BeanPropertyBindingResult(new Object(), "probe");
+        binding.addError(new org.springframework.validation.FieldError(
+                "probe", "nickname", "昵称长度需为 1~30 个字符"));
+        org.springframework.http.ResponseEntity<com.wzblog.common.api.Result<Object>> response =
+                globalExceptionHandler.handleBind(
+                        new org.springframework.validation.BindException(binding));
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody().code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) response.getBody().data();
+        @SuppressWarnings("unchecked")
+        Map<String, String> errors = (Map<String, String>) data.get("errors");
+        assertThat(errors.get("nickname")).isNotBlank();
+    }
 
     @Test
     void notificationsWithDedupAndRead() throws Exception {

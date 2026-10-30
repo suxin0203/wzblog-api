@@ -397,9 +397,12 @@ public class CommentAppService {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "content 不能为空", null);
         }
         String trimmed = content.trim();
-        if (trimmed.isEmpty() || trimmed.codePoints().count() > maxCodePoints) {
+        if (trimmed.isEmpty()) {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR,
                     "content 长度须为 1~" + maxCodePoints + " 字符", null);
+        }
+        if (trimmed.codePoints().count() > maxCodePoints) {
+            throw new BusinessException(ErrorCode.COMMENT_CONTENT_TOO_LONG);
         }
         return trimmed;
     }

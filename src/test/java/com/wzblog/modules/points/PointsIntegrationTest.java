@@ -690,6 +690,22 @@ class PointsIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void adminInputBoundariesReturnFieldErrors() {
+        HttpResult title = post("/api/v1/admin/titles",
+                Map.of("name", "名".repeat(51), "sortOrder", 1), adminToken());
+        assertThat(title.status()).isEqualTo(400);
+        assertThat(title.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(title.data().path("errors").path("name").asText()).isNotBlank();
+
+        long reader = userId("bootstrap_admin");
+        HttpResult reason = adjustWithKey(adminToken(), reader, 1, "理".repeat(256),
+                UUID.randomUUID().toString());
+        assertThat(reason.status()).isEqualTo(400);
+        assertThat(reason.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(reason.data().path("errors").path("reason").asText()).isNotBlank();
+    }
+
+    @Test
     void adminAdjustProcessingStateReturns409WithTtl() {
         String username = unique("ip");
         register(username, PASSWORD, null);

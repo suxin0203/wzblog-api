@@ -65,9 +65,12 @@ public class GuestbookAppService {
             throw new BusinessException(ErrorCode.GUESTBOOK_DISABLED);
         }
         String normalized = content == null ? "" : content.trim();
-        if (normalized.isEmpty() || normalized.codePoints().count() > 1000) {
+        if (normalized.isEmpty()) {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR,
-                    "content 长度须为 1~1000 字符", null);
+                    "content 不能为空", null);
+        }
+        if (normalized.codePoints().count() > 1000) {
+            throw new BusinessException(ErrorCode.GUESTBOOK_CONTENT_TOO_LONG);
         }
         String name = user != null && user.role() != null ? null : normalizeNickname(nickname);
         if (user != null) {

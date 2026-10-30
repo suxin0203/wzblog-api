@@ -68,6 +68,18 @@
 - D62 历史版本命中标注 historical=true（前端显示“历史版本”）
 - D63 friend_links.logo_key 无 ref_count 维护，纳入实时引用检查
 - D64 文件管理删除入口：409 展示引用位置（HTML 转义）；删除后旧链接 404/占位
+- D65 （规划方预留）
+- D66 （规划方预留）
+- D67 校验权威在业务层：凡已有业务错误码的字段，业务校验由领域层抛出业务码
+- D68 Bean Validation 只做必填与防爆硬上限（业务上限 ×10）
+- D69 前端必须按 code 分支，禁止依赖 message 文案
+- D70 三字段口径：AI 600/6000、留言 1000/10000、评论 2000/20000（业务/硬上限）
+- D71 新增字段业务码：GUESTBOOK_CONTENT_TOO_LONG、COMMENT_CONTENT_TOO_LONG
+- D72 昵称/称号/reason 不新增业务码：DTO 上界=业务上界，超界 COMMON + field 明细
+- D73 BindException / ConstraintViolationException 统一 400 + data.errors
+- D74 三条校验异常路径与主 envelope 同构；legacy 路由不动
+- D75 前端 SSE Accept 兼容 JSON 错误壳（text/event-stream, application/json）
+- D76 错误码清单表落位 docs/api/error-codes.md
 
 ## 编号映射表（旧条目 → 新编号）
 
@@ -88,8 +100,9 @@
 | D32 | D32 | end_at 1 秒缝 → 本轮以“存储半开、界面闭合”收口 |
 | D33 | D34 | DDL 历史行不回填，补入白名单修复判据 |
 
-新增补录（旧文件无对应编号）：D16–D19、D27、D29、D31、D33、D36–D47、D49、D50、D54–D64。
-D59–D64 的条目内容按 T-013 实现记录，待规划方确认；D51–D53 为规划方预留。
+新增补录（旧文件无对应编号）：D16–D19、D27、D29、D31、D33、D36–D47、D49、D50、D54–D64、D67–D76。
+D54–D64 中 D59–D64 与 D67–D76 的条目内容按实现记录，待规划方确认；D51–D53、D65–D66 为规划方预留。
+D63/D64 的目标定义待规划方确认（当前为实现记录版本）。
 
 ## 实施记录
 
@@ -139,3 +152,14 @@ D59–D64 的条目内容按 T-013 实现记录，待规划方确认；D51–D53
 | 前端提示 | 文件管理新增删除入口，409 时展示“文章 · 封面：标题（#id）”并转义 | D64 |
 | 缩略图降级 | thumb_key 为 null 时 5 处展示均直接用 objectKey/原图直链 | D56 |
 | 测试 | MediaIntegrationTest 20/20；新增封面/正文/渲染态/历史版本/友链 5 条 | — |
+
+### T-014 错误码统一
+
+| 项目 | 实施与证据 | 关联 |
+| --- | --- | --- |
+| 三字段硬上限 | AI 6000 / 留言 10000 / 评论 20000，超限 400 COMMON + errors | D68、D70 |
+| 业务码 | 601→AI_MESSAGE_TOO_LONG；1001→GUESTBOOK_CONTENT_TOO_LONG；2001→COMMENT_CONTENT_TOO_LONG | D67、D71 |
+| 昵称/称号/reason | DTO 上界=业务上界，31/51/256 均 400 COMMON + field | D72 |
+| 异常同构 | BindException/ConstraintViolation 补 400 + data.errors | D73、D74 |
+| 前端 | SSE Accept 兼容 JSON 错误壳，AI 超长显示业务文案（500→400） | D69、D75 |
+| 文档 | docs/api/error-codes.md 清单表 | D76 |

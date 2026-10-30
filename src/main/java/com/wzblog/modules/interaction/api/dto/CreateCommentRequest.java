@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
  * 发表评论请求（M3 §4.1）。
  */
 public record CreateCommentRequest(
-        @NotBlank @Size(max = 2100) String content,
+        @NotBlank @Size(max = 20000) String content,
         String parentId,
-        @Size(max = 40) String guestNickname) {
+        @Size(max = 30) String guestNickname) {
 }

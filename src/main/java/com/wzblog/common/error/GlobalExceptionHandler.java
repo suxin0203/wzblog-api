@@ -52,11 +52,38 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Result<Object>> handleValidation(MethodArgumentNotValidException ex) {
+        return validationFailure(ex.getBindingResult());
+    }
+
+    /** 表单/查询对象绑定校验（@ModelAttribute + @Valid）。 */
+    @ExceptionHandler(org.springframework.validation.BindException.class)
+    public ResponseEntity<Result<Object>> handleBind(org.springframework.validation.BindException ex) {
+        return validationFailure(ex.getBindingResult());
+    }
+
+    /** 方法参数级约束（@Validated + @RequestParam 约束），与 body 校验同构。 */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Result<Object>> handleConstraintViolation(ConstraintViolationException ex) {
         Map<String, String> errors = new LinkedHashMap<>();
-        ex.getBindingResult().getFieldErrors()
+        ex.getConstraintViolations().forEach(violation -> {
+            String path = violation.getPropertyPath() == null ? "" : violation.getPropertyPath().toString();
+            String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+            errors.putIfAbsent(field, violation.getMessage());
+        });
+        return badRequestWithErrors(errors);
+    }
+
+    private ResponseEntity<Result<Object>> validationFailure(
+            org.springframework.validation.BindingResult bindingResult) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        bindingResult.getFieldErrors()
                 .forEach(error -> errors.putIfAbsent(error.getField(), error.getDefaultMessage()));
-        ex.getBindingResult().getGlobalErrors()
+        bindingResult.getGlobalErrors()
                 .forEach(error -> errors.putIfAbsent("_global", error.getDefaultMessage()));
+        return badRequestWithErrors(errors);
+    }
+
+    private ResponseEntity<Result<Object>> badRequestWithErrors(Map<String, String> errors) {
         Map<String, Object> data = Map.of("errors", errors);
         return ResponseEntity.badRequest()
                 .body(Result.fail(ErrorCode.COMMON_VALIDATION_ERROR, "参数校验失败", data));
@@ -65,8 +92,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             HttpMessageNotReadableException.class,
             MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class,
-            ConstraintViolationException.class
+            MissingServletRequestParameterException.class
     })
     public ResponseEntity<Result<Object>> handleBadRequest(Exception ex) {
         return ResponseEntity.badRequest()
