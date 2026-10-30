@@ -5,6 +5,7 @@ import com.wzblog.modules.identity.infra.mapper.UserMapper;
 import com.wzblog.modules.identity.infra.redis.TokenStateStore;
 import com.wzblog.modules.identity.infra.security.JwtAuthenticationFilter;
 import com.wzblog.modules.identity.infra.security.JwtService;
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -129,6 +130,12 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_AI_PATHS).permitAll()
                         .requestMatchers(PUBLIC_OPERATION_PATHS).permitAll()
                         .requestMatchers(PUBLIC_LEGACY_COMPAT_PATHS).permitAll()
+                        // 仅放行 SSE 端点的容器 ASYNC 内部派发：初始请求仍走 Bearer 鉴权；
+                        // 否则连接结束/超时后异步派发会因无 SecurityContext 再次拒绝并打 ERROR。
+                        .requestMatchers((RequestMatcher) request ->
+                                request.getDispatcherType() == DispatcherType.ASYNC
+                                        && "/api/v1/notifications/stream".equals(request.getRequestURI()))
+                        .permitAll()
                         // 未映射的路径放行，交由 MVC 输出 404（避免未知路径被 401 掩盖）
                         .requestMatchers(unmappedRequest(handlerMappingProvider)).permitAll()
                         .requestMatchers("/api/v1/admin/users/**").hasRole("ADMIN")

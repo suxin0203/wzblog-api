@@ -86,4 +86,10 @@ public class NotificationController {
             return null;
         }
     }
+
+    /** 浏览器断网/刷新导致 SSE 写入失败：连接已结束，按调试日志处理，避免 ERROR 堆栈。 */
+    @org.springframework.web.bind.annotation.ExceptionHandler(IOException.class)
+    public void handleClientAbort(IOException ex) {
+        // no-op：响应已不可用，无需写回
+    }
 }

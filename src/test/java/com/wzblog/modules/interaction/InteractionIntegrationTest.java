@@ -784,27 +784,37 @@ class InteractionIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
-    void sseStreamLimitReturns429JsonEvenWithEventStreamAccept() {
+    void sseStreamLimitEvictsOldestConnection() {
         String username = unique("ssl");
         register(username, PASSWORD, null);
-        String token = accessToken(username, PASSWORD);
         long userId = userId(username);
 
-        for (int i = 0; i < com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry.MAX_PER_USER; i++) {
+        class TrackingEmitter extends org.springframework.web.servlet.mvc.method.annotation.SseEmitter {
+            boolean completed;
+
+            TrackingEmitter() {
+                super(0L);
+            }
+
+            @Override
+            public void complete() {
+                completed = true;
+                super.complete();
+            }
+        }
+
+        TrackingEmitter oldest = new TrackingEmitter();
+        assertThat(sseConnectionRegistry.register(userId, oldest)).isTrue();
+        for (int i = 1; i < com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry.MAX_PER_USER; i++) {
             assertThat(sseConnectionRegistry.register(userId,
                     new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(0L))).isTrue();
         }
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-        headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
-        org.springframework.http.ResponseEntity<String> resp = rest.exchange(
-                URI.create("/api/v1/notifications/stream"), HttpMethod.GET,
-                new HttpEntity<>(headers), String.class);
-
-        assertThat(resp.getStatusCode().value()).isEqualTo(429);
-        assertThat(resp.getHeaders().getContentType().isCompatibleWith(MediaType.APPLICATION_JSON)).isTrue();
-        assertThat(resp.getBody()).contains("NOTIFY_STREAM_LIMITED");
+        // 第 4 条：淘汰最旧连接并接纳新连接，而不是 429
+        assertThat(sseConnectionRegistry.register(userId, new TrackingEmitter())).isTrue();
+        assertThat(sseConnectionRegistry.connectionCount(userId))
+                .isEqualTo(com.wzblog.modules.interaction.infra.sse.SseConnectionRegistry.MAX_PER_USER);
+        assertThat(oldest.completed).as("最旧连接应被淘汰关闭").isTrue();
     }
     @Test
     void offsetPaginationRejectsOutOfRangeParams() throws Exception {
