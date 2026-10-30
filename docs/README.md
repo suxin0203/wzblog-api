@@ -26,7 +26,7 @@
 | 想看什么 | 去哪儿 |
 | --- | --- |
 | 归档了哪些文档、按什么分组 | [archive/README.md](archive/README.md) |
-| 找回某份旧文档 | `git checkout pre-doc-slim -- "docs/archive/…"` 或解 `backup/docs-archive-20261031.zip` |
+| 找回某份旧文档 | `git checkout docs-archive-ref -- "docs/archive/…"` 或解 `backup/docs-archive-20261031.zip` |
 | 为什么移出 | 旧文档与当前实现不一致，留在工作区会让 AI 按旧口径改代码 |
 
 > 例外：`13-微信扫码复原计划` **没有归档**，已提升为 [16-小程序旧协议兼容.md](16-小程序旧协议兼容.md)（线上小程序仍在用）。

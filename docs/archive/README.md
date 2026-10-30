@@ -2,15 +2,15 @@
 
 > **这里曾经有 52 个历史文档，2026-10-31 全部移出仓库。**
 > 原因：它们与当前实现不一致，留在工作区只会让 AI 和人按**旧口径**改代码（记忆偏差）。
-> 移出不等于删除：文件在 git 历史和离线备份里都还在。
+> 移出不等于删除：文件在 git 历史和离线备份里都还在。\r\n> **专用 tag**：`docs-archive-ref`（指向移出前的最后一个提交 `e0a0c00`，含全部 53 份归档文件）。
 
 ## 怎么找回
 
 | 方式 | 操作 |
 | --- | --- |
-| **git 历史**（首选，无需外部文件） | `git checkout pre-doc-slim -- "docs/archive/design/04-接口契约.md"` |
-| 查看某份旧文档内容 | `git show pre-doc-slim:docs/archive/design/04-接口契约.md` |
-| 列出当时全部归档文件 | `git ls-tree -r --name-only pre-doc-slim -- docs/archive` |
+| **git 历史**（首选，无需外部文件） | `git checkout docs-archive-ref -- "docs/archive/design/04-接口契约.md"` |
+| 查看某份旧文档内容 | `git show docs-archive-ref:docs/archive/design/04-接口契约.md` |
+| 列出当时全部归档文件 | `git ls-tree -r --name-only docs-archive-ref -- docs/archive`（53 个） |
 | **离线备份** | `E:\MyCodeProject\Java\backup\docs-archive-20261031.zip`（52 个文件，759 KB） |
 
 ## 归档清单（按类型）

@@ -207,5 +207,5 @@ D63/D64 已按规划方原文逐字写入（行为变更预演 / 既有约束不
 | 门禁 | 153/153；vue-tsc 0；vite build 0；控制台 0 error | — |
 | 收口 | 调试阶段可关闭，合并待批 | D48、D82 |
 
-- D97 历史文档一律移出仓库（2026-10-31 执行）：docs/archive 下 52 个历史文档打包到 backup/docs-archive-20261031.zip 并 git rm，仓库内只保留 docs/archive/README.md 说明页；找回方式 = `git checkout pre-doc-slim -- <path>` 或解 zip。理由：过期文档留在工作区会被 grep 命中，导致按旧口径改代码。
+- D97 历史文档一律移出仓库（2026-10-31 执行）：docs/archive 下 52 个历史文档打包到 backup/docs-archive-20261031.zip 并 git rm，仓库内只保留 docs/archive/README.md 说明页；找回方式 = `git checkout docs-archive-ref -- <path>`（tag 指向 e0a0c00）或解 zip。理由：过期文档留在工作区会被 grep 命中，导致按旧口径改代码。
 - D98 线上在用的兼容协议文档例外：`modules/wechat` 的 13 条旧协议路由有真实小程序在跑，原 13-微信扫码复原计划已提升为权威文档 docs/16-小程序旧协议兼容.md，不得归档。
