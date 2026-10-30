@@ -294,16 +294,40 @@ class AiIntegrationTest extends IdentityTestSupport {
         HttpResult stats = get("/api/v1/admin/ai/stats?from=2030-01-01T00:00:00"
                 + "&to=2030-01-01T00:00:10", adminToken());
         assertThat(stats.status()).isEqualTo(200);
-        // sessions 使用 ge(from) + le(to)：边界两端均包含
-        assertThat(stats.data().path("sessions").asLong()).isEqualTo(3L);
+        // D41：sessions 与列表同口径（last_message_at），半开 [from, to)：含 base、base+9s
+        assertThat(stats.data().path("sessions").asLong()).isEqualTo(2L);
+    }
+
+    @Test
+    void statsSessionsUseLastMessageAtAndExcludeToSecond() {
+        LocalDateTime base = LocalDateTime.of(2030, 2, 1, 0, 0, 0);
+        // created_at 与 last_message_at 故意错开：若仍按 created_at 统计，结果会变成 3
+        insertSessionAt(base.plusSeconds(30), base.minusSeconds(1));  // last 早于 from → 不计
+        insertSessionAt(base.minusSeconds(30), base);                  // last = from → 计
+        insertSessionAt(base.minusSeconds(30), base.plusSeconds(9));   // 计
+        insertSessionAt(base.minusSeconds(30), base.plusSeconds(10));  // last = to → 不计
+
+        HttpResult stats = get("/api/v1/admin/ai/stats?from=2030-02-01T00:00:00"
+                + "&to=2030-02-01T00:00:10", adminToken());
+        assertThat(stats.status()).isEqualTo(200);
+        assertThat(stats.data().path("sessions").asLong()).isEqualTo(2L);
+
+        HttpResult list = get("/api/v1/admin/ai/sessions?from=2030-02-01T00:00:00"
+                + "&to=2030-02-01T00:00:10&pageSize=50", adminToken());
+        assertThat(list.status()).isEqualTo(200);
+        assertThat(list.data().path("total").asLong()).isEqualTo(2L);
     }
 
     private void insertSession(LocalDateTime createdAt) {
+        insertSessionAt(createdAt, createdAt);
+    }
+
+    private void insertSessionAt(LocalDateTime createdAt, LocalDateTime lastMessageAt) {
         String id = ("T8" + UUID.randomUUID().toString().replace("-", "")).substring(0, 26);
         jdbc.update("""
                 INSERT INTO ai_sessions (id, channel, message_count, last_message_at, created_at, updated_at)
                 VALUES (?, 'WEB', 0, ?, ?, ?)
-                """, id, createdAt, createdAt, createdAt);
+                """, id, lastMessageAt, createdAt, createdAt);
     }
 
     @Test
