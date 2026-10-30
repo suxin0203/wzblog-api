@@ -99,7 +99,7 @@ public class ArticleReadService {
         CursorCodec.Cursor decoded = CursorCodec.decode(cursor);
         LocalDateTime cursorTime = decoded == null ? null : CursorCodec.toUtc(decoded);
         Long cursorId = decoded == null ? null : decoded.id();
-        String keywordFilter = keyword == null || keyword.isBlank() ? null : keyword.trim();
+        String keywordFilter = keyword == null || keyword.isBlank() ? null : escapeLike(keyword.trim());
 
         List<Article> rows = articleMapper.selectFeed(
                 Ids.parseNullable(categoryId), Ids.parseNullable(tagId), keywordFilter,
@@ -128,38 +128,10 @@ public class ArticleReadService {
         int limit = pageSize(size, 10, 20);
         Long category = Ids.parseNullable(categoryId);
         Long tag = Ids.parseNullable(tagId);
-        // BOOLEAN MODE 清洗（防 1064 语法错误 500）；清洗后为空则降级 LIKE 原词
-        String cleaned = sanitizeSearchKeyword(value);
-        if (!cleaned.equals(value)) {
-            if (cleaned.isBlank()) {
-                List<Article> rows = articleMapper.selectSearchLike(value, category, tag, limit);
-                return new SearchResultVO(articleAssembler.toListItems(rows), true);
-            }
-            value = cleaned;
-        }
-        if (value.codePointCount(0, value.length()) < 2) {
-            List<Article> rows = articleMapper.selectSearchLike(value, category, tag, limit);
-            return new SearchResultVO(articleAssembler.toListItems(rows), true);
-        }
-
-        List<SearchHit> hits = articleMapper.selectSearchHits(value, category, tag, Math.min(100, limit * 5));
-        if (hits.isEmpty()) {
-            return new SearchResultVO(List.of(), false);
-        }
-        List<Long> ids = hits.stream().map(SearchHit::getId).toList();
-        Map<Long, Article> articles = new HashMap<>();
-        for (Article article : articleMapper.selectPublicByIds(ids)) {
-            articles.put(article.getId(), article);
-        }
-        Instant now = Instant.now();
-        final String keywordForScoring = value;
-        List<Article> ordered = hits.stream()
-                .filter(hit -> articles.containsKey(hit.getId()))
-                .sorted(Comparator.comparingDouble((SearchHit hit) -> weightedScore(hit, keywordForScoring, now)).reversed())
-                .limit(limit)
-                .map(hit -> articles.get(hit.getId()))
-                .toList();
-        return new SearchResultVO(articleAssembler.toListItems(ordered), false);
+        // 与信息流统一为 title+summary 包含匹配（%kw%），按发布时间倒序，便于两接口对拍
+        boolean degraded = value.codePointCount(0, value.length()) < 2;
+        List<Article> rows = articleMapper.selectSearchLike(escapeLike(value), category, tag, limit);
+        return new SearchResultVO(articleAssembler.toListItems(rows), degraded);
     }
 
     public List<ArticleListItemVO> pinned(int limit) {
@@ -284,8 +256,9 @@ public class ArticleReadService {
         };
         Long category = Ids.parseNullable(categoryId);
         Long author = Ids.parseNullable(authorId);
-        long total = articleMapper.countAdmin(statusFilter, visibilityFilter, deleted, keyword, category, author);
-        List<Article> rows = articleMapper.selectAdmin(statusFilter, visibilityFilter, deleted, keyword,
+        String keywordFilter = keyword == null ? null : escapeLike(keyword.trim());
+        long total = articleMapper.countAdmin(statusFilter, visibilityFilter, deleted, keywordFilter, category, author);
+        List<Article> rows = articleMapper.selectAdmin(statusFilter, visibilityFilter, deleted, keywordFilter,
                 category, author, sortKey, (long) (safePage - 1) * safeSize, safeSize);
         return PageResult.of(articleAssembler.toListItems(rows), total, safePage, safeSize);
     }
@@ -401,6 +374,13 @@ public class ArticleReadService {
 
     private String cacheKey(Article article) {
         return "content:article:" + article.getId() + ":v" + article.getVersion();
+    }
+
+    /**
+     * LIKE 包含匹配转义：! 为 ESCAPE 字符，% _ 按字面匹配；反斜杠在 ESCAPE '!' 下不再是转义符。
+     */
+    private static String escapeLike(String value) {
+        return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     /**

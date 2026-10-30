@@ -529,22 +529,31 @@ class ContentIntegrationTest extends IdentityTestSupport {
     // ------------------------------------------------------------ 读取
 
     @Test
-    void searchRanksTitleHitsAndDegradesForShortKeyword() {
+    void searchUsesContainsSemanticsAndDegradesForShortKeyword() {
         String token = adminToken();
         String keyword = "橘子猫";
         String titleHit = keyword + unique("t");
         HttpResult titled = createArticle(token, articleBody(titleHit, "正文没有那个词"));
         publish(titled.data().path("id").asText(), token);
-        HttpResult bodyOnly = createArticle(token, articleBody(unique("body"), "正文提到了" + keyword));
+
+        HttpResult summaryHit = createArticle(token, articleBody(unique("s"), "正文",
+                Map.of("summary", "摘要提到了" + keyword)));
+        publish(summaryHit.data().path("id").asText(), token);
+
+        HttpResult bodyOnly = createArticle(token, articleBody(unique("body"), "正文提到了" + keyword,
+                Map.of("summary", "摘要不含关键词")));
         publish(bodyOnly.data().path("id").asText(), token);
 
         HttpResult result = get("/api/v1/articles/search?keyword=" + keyword + "&size=20", null);
         assertThat(result.status()).isEqualTo(200);
         assertThat(result.data().path("degraded").asBoolean()).isFalse();
         List<String> ids = listIds(result.data().path("list"));
-        assertThat(ids).contains(titled.data().path("id").asText());
-        assertThat(ids.indexOf(titled.data().path("id").asText()))
-                .isLessThan(ids.indexOf(bodyOnly.data().path("id").asText()));
+        assertThat(ids).contains(titled.data().path("id").asText(), summaryHit.data().path("id").asText());
+        assertThat(ids).doesNotContain(bodyOnly.data().path("id").asText());
+
+        // 与信息流包含匹配结果一致（同关键词、同页大小）
+        HttpResult feed = get("/api/v1/articles?keyword=" + keyword + "&size=20", null);
+        assertThat(listIds(feed.data().path("list"))).isEqualTo(ids);
 
         HttpResult degraded = get("/api/v1/articles/search?keyword=" + keyword.substring(0, 1), null);
         assertThat(degraded.status()).isEqualTo(200);

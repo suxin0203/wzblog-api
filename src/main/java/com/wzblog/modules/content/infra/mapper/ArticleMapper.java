@@ -50,7 +50,8 @@ public interface ArticleMapper extends BaseMapper<Article> {
               AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id = a.id AND at.tag_id = #{tagId})
             </if>
             <if test="keyword != null and keyword != ''">
-              AND (a.title LIKE CONCAT(#{keyword}, '%') OR a.summary LIKE CONCAT(#{keyword}, '%'))
+              AND (a.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+                   OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             </if>
             <if test="from != null"> AND a.published_at &gt;= #{from}</if>
             <if test="to != null"> AND a.published_at &lt; #{to}</if>
@@ -119,13 +120,15 @@ public interface ArticleMapper extends BaseMapper<Article> {
                                      @Param("tagId") Long tagId,
                                      @Param("limit") int limit);
 
+    // 用户搜索统一为包含匹配；LIKE '%kw%' 无法走 B-tree/全文索引，当前数据量可接受（T-006 性能护栏）。
     @Select("""
             <script>
             SELECT
             """ + LIST_COLUMNS + """
             FROM articles a
             WHERE """ + PUBLIC_FILTER + """
-              AND a.title LIKE CONCAT('%', #{keyword}, '%')
+              AND (a.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+                   OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="tagId != null">
               AND EXISTS (SELECT 1 FROM article_tags at WHERE at.article_id = a.id AND at.tag_id = #{tagId})
@@ -244,7 +247,8 @@ public interface ArticleMapper extends BaseMapper<Article> {
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="authorId != null"> AND a.author_id = #{authorId}</if>
             <if test="keyword != null and keyword != ''">
-              AND (a.title LIKE CONCAT('%', #{keyword}, '%') OR a.summary LIKE CONCAT('%', #{keyword}, '%'))
+              AND (a.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+                   OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             </if>
             </script>
             """)
@@ -272,7 +276,8 @@ public interface ArticleMapper extends BaseMapper<Article> {
             <if test="categoryId != null"> AND a.category_id = #{categoryId}</if>
             <if test="authorId != null"> AND a.author_id = #{authorId}</if>
             <if test="keyword != null and keyword != ''">
-              AND (a.title LIKE CONCAT('%', #{keyword}, '%') OR a.summary LIKE CONCAT('%', #{keyword}, '%'))
+              AND (a.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+                   OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             </if>
             ORDER BY
             <choose>
