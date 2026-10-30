@@ -14,9 +14,11 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -279,6 +281,29 @@ class AiIntegrationTest extends IdentityTestSupport {
                 .status()).isEqualTo(403);
         assertThat(post("/api/v1/articles/" + articleId + "/ai/tags", Map.of(), editorToken)
                 .status()).isEqualTo(403);
+    }
+
+    @Test
+    void statsRangeUsesUtcBoundaries() {
+        LocalDateTime base = LocalDateTime.of(2030, 1, 1, 0, 0, 0);
+        insertSession(base.minusSeconds(1));
+        insertSession(base);
+        insertSession(base.plusSeconds(9));
+        insertSession(base.plusSeconds(10));
+
+        HttpResult stats = get("/api/v1/admin/ai/stats?from=2030-01-01T00:00:00"
+                + "&to=2030-01-01T00:00:10", adminToken());
+        assertThat(stats.status()).isEqualTo(200);
+        // sessions 使用 ge(from) + le(to)：边界两端均包含
+        assertThat(stats.data().path("sessions").asLong()).isEqualTo(3L);
+    }
+
+    private void insertSession(LocalDateTime createdAt) {
+        String id = ("T8" + UUID.randomUUID().toString().replace("-", "")).substring(0, 26);
+        jdbc.update("""
+                INSERT INTO ai_sessions (id, channel, message_count, last_message_at, created_at, updated_at)
+                VALUES (?, 'WEB', 0, ?, ?, ?)
+                """, id, createdAt, createdAt, createdAt);
     }
 
     @Test

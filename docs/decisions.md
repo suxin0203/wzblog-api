@@ -20,3 +20,7 @@
 - D23 搜索链路死代码暂留，待联合回归后统一清理
 - D24 search 不排除置顶=有意差异
 - D25 每轮 preflight：health + MySQL/Redis 连通
+- D26 置顶上限=3（列表页顶部置顶区最多展示 3 篇）
+- D27 置顶双路径（/articles/pinned 与 feed?pinned）收口归 T-010，期间禁止新增调用 feed?pinned
+- D28 置顶实时化走 SSE，不做轮询
+- D29 时区口径=D2-A：前端提交侧转 UTC，后端全程 UTC，不做后端时区解释

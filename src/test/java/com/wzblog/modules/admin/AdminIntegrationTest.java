@@ -1,11 +1,14 @@
 package com.wzblog.modules.admin;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.wzblog.support.IdentityTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -148,6 +151,87 @@ class AdminIntegrationTest extends IdentityTestSupport {
         register(other, PASSWORD, null);
         assertThat(get("/api/v1/admin/dashboard/overview", accessToken(other, PASSWORD))
                 .status()).isEqualTo(403);
+    }
+
+    @Test
+    void bannerActiveWindowUsesUtcAndUtcBoundaries() {
+        String objectKey = "banners/2026/10/t008-" + unique("b") + ".png";
+        jdbc.update("""
+                INSERT INTO files (bucket, object_key, uploader_id, biz_type, status, ref_count, size_bytes)
+                VALUES ('local', ?, 1, 'BANNER', 'ACTIVE', 0, 100)
+                """, objectKey);
+
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC).withNano(0);
+        LocalDateTime start = now.minusMinutes(1);
+        LocalDateTime end = now.plusMinutes(1);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("title", "T008 UTC 窗口");
+        body.put("imageKey", objectKey);
+        body.put("status", "ENABLED");
+        body.put("sortOrder", 1);
+        body.put("startAt", start.toString());
+        body.put("endAt", end.toString());
+        HttpResult created = post("/api/v1/admin/banners", body, adminToken());
+        assertThat(created.status()).isEqualTo(200);
+        String id = created.data().path("id").asText();
+
+        // 请求体 UTC 墙钟原样落库
+        assertThat(jdbc.queryForObject("SELECT start_at FROM banners WHERE id = ?",
+                LocalDateTime.class, Long.valueOf(id))).isEqualTo(start);
+        assertThat(activeBannerIds()).contains(id);
+
+        // 已过期：end_at 早于 UTC 现在 → 不生效
+        body.put("startAt", now.minusMinutes(2).toString());
+        body.put("endAt", now.minusSeconds(1).toString());
+        assertThat(put("/api/v1/admin/banners/" + id, body, adminToken()).status()).isEqualTo(200);
+        assertThat(activeBannerIds()).doesNotContain(id);
+
+        // 未开始：start_at 晚于 UTC 现在 → 不生效
+        body.put("startAt", now.plusMinutes(5).toString());
+        body.put("endAt", now.plusMinutes(10).toString());
+        assertThat(put("/api/v1/admin/banners/" + id, body, adminToken()).status()).isEqualTo(200);
+        assertThat(activeBannerIds()).doesNotContain(id);
+
+        delete("/api/v1/admin/banners/" + id, adminToken());
+    }
+
+    @Test
+    void auditLogQueryUsesUtcBoundaries() {
+        String action = "T008_AUDIT_" + unique("a");
+        LocalDateTime base = LocalDateTime.of(2030, 1, 1, 0, 0, 0);
+        insertAudit(action, "b-1", base.minusSeconds(1));
+        insertAudit(action, "b0", base);
+        insertAudit(action, "b9", base.plusSeconds(9));
+        insertAudit(action, "b10", base.plusSeconds(10));
+
+        HttpResult result = get("/api/v1/admin/audit-logs?action=" + action
+                + "&from=2030-01-01T00:00:00&to=2030-01-01T00:00:10&pageSize=20", adminToken());
+        assertThat(result.status()).isEqualTo(200);
+        assertThat(result.data().path("total").asLong()).isEqualTo(2L); // >= from, < to
+        boolean b0 = false;
+        boolean b9 = false;
+        for (JsonNode item : result.data().path("list")) {
+            b0 |= "b0".equals(item.path("targetId").asText());
+            b9 |= "b9".equals(item.path("targetId").asText());
+        }
+        assertThat(b0).isTrue();
+        assertThat(b9).isTrue();
+    }
+
+    private void insertAudit(String action, String targetId, LocalDateTime createdAt) {
+        jdbc.update("""
+                INSERT INTO audit_logs (operator_id, action, target_type, target_id, ip, created_at)
+                VALUES (1, ?, 'SYSTEM', ?, '127.0.0.1', ?)
+                """, action, targetId, createdAt);
+    }
+
+    private java.util.List<String> activeBannerIds() {
+        HttpResult active = get("/api/v1/banners", null);
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (JsonNode item : active.data()) {
+            ids.add(item.path("id").asText());
+        }
+        return ids;
     }
 
     @Test
