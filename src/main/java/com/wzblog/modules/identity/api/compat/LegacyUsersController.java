@@ -3,7 +3,6 @@ package com.wzblog.modules.identity.api.compat;
 import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.web.ClientInfo;
 import com.wzblog.common.web.CurrentUser;
-import com.wzblog.common.web.InfrastructureRoute;
 import com.wzblog.common.web.LegacyResponses;
 import com.wzblog.modules.identity.app.LegacyArithmeticCaptcha;
 import com.wzblog.common.error.ErrorCode;
@@ -16,6 +15,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
@@ -29,7 +29,7 @@ import java.util.Map;
  * 壳：HTTP 200 + 数字 code；密码 Base64、验证码答案 MD5；401 由 Java 过滤器按 Bearer 输出。
  */
 @RestController
-@InfrastructureRoute
+@RequestMapping("/legacy")
 public class LegacyUsersController {
 
     private static final Logger log = LoggerFactory.getLogger(LegacyUsersController.class);

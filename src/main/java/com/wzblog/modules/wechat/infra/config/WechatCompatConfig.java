@@ -17,7 +17,7 @@ public class WechatCompatConfig {
                     "${wzblog.wechat.timestamp-max-skew-seconds:300}") long skewSeconds) {
         FilterRegistrationBean<LegacyTimestampFilter> registration =
                 new FilterRegistrationBean<>(new LegacyTimestampFilter(skewSeconds));
-        registration.addUrlPatterns("/qr-login/*", "/miniapp/*", "/wechat/*", "/users/*");
+        registration.addUrlPatterns("/api/v1/legacy/*");
         registration.setOrder(30);
         return registration;
     }

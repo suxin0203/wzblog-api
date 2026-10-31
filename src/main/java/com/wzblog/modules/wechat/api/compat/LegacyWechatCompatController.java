@@ -4,7 +4,6 @@ import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.util.Times;
 import com.wzblog.common.web.ClientInfo;
-import com.wzblog.common.web.InfrastructureRoute;
 import com.wzblog.common.web.LegacyResponses;
 import com.wzblog.modules.identity.app.LegacyAuthAppService;
 import com.wzblog.modules.identity.app.WechatIdentityFacade;
@@ -19,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,12 +27,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 旧协议 /wechat/* + /qr-login/* + /miniapp/* 兼容端点（已上线小程序，docs/archive/plans/13-微信扫码复原计划.md（v2） §2.2）。
+ * 旧协议兼容端点（已上线小程序，docs/16-小程序旧协议兼容.md）：
+ * 实际路径 = /api/v1/legacy + 下述相对路径（WebConfig 统一前缀，v1.6.7 起）。
  * 严格复刻 Node 行为：轮询在 CONFIRMED 时一次性签发双 Token 并置 COMPLETED；
  * entry 未绑定下发 bindToken；过期统一 HTTP 200 + code:410。
  */
 @RestController
-@InfrastructureRoute
+@RequestMapping("/legacy")
 public class LegacyWechatCompatController {
 
     private final QrSessionService qrSessions;

@@ -89,7 +89,7 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
 
     /** 算术验证码：取题 → 计算 → MD5。 */
     private Map<String, String> fetchCaptcha() {
-        Legacy captcha = legacyGet("/users/captcha", null);
+        Legacy captcha = legacyGet("/api/v1/legacy/users/captcha", null);
         assertThat(captcha.httpStatus()).isEqualTo(200);
         assertThat(captcha.code()).isEqualTo(200);
         int num1 = captcha.data().path("num1").asInt();
@@ -105,7 +105,7 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
     @Test
     void openidProxyReturnsNoCodeFieldAndUserinfoIssuesTokens() {
         // code 换 openid：成功响应无 code 字段（request.js 格式3）
-        Legacy openid = legacyGet("/wechat/openid/mock-code-1", null);
+        Legacy openid = legacyGet("/api/v1/legacy/wechat/openid/mock-code-1", null);
         assertThat(openid.httpStatus()).isEqualTo(200);
         assertThat(openid.body().has("code")).isFalse();
         assertThat(openid.body().path("message").asText()).isEqualTo("获取openid成功");
@@ -113,7 +113,7 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         assertThat(openidValue).startsWith("mock-openid-");
 
         // 未绑定 → {code:0, 用户不存在}
-        Legacy unbound = legacyGet("/wechat/userinfo/" + openidValue, null);
+        Legacy unbound = legacyGet("/api/v1/legacy/wechat/userinfo/" + openidValue, null);
         assertThat(unbound.code()).isZero();
         assertThat(unbound.body().path("message").asText()).isEqualTo("用户不存在");
 
@@ -123,7 +123,7 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         register.put("password", b64("Passw0rd1"));
         register.put("email", unique("wx") + "@test.local");
         register.put("openid", openidValue);
-        Legacy registered = legacyPost("/users/register", register);
+        Legacy registered = legacyPost("/api/v1/legacy/users/register", register);
         assertThat(registered.code()).as("body=%s", registered.body()).isEqualTo(200);
         assertThat(registered.body().path("token").asText()).isNotBlank();
         assertThat(registered.body().path("refreshToken").asText()).isNotBlank();
@@ -132,7 +132,7 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         assertThat(registered.body().path("data").path("role").asText()).isEqualTo("user");
 
         // openid 已绑定 → userinfo 直接登录（data.refresh_token 供小程序 401 刷新）
-        Legacy login = legacyGet("/wechat/userinfo/" + openidValue, null);
+        Legacy login = legacyGet("/api/v1/legacy/wechat/userinfo/" + openidValue, null);
         assertThat(login.code()).isEqualTo(200);
         assertThat(login.body().path("token").asText()).isNotBlank();
         assertThat(login.body().path("data").path("refresh_token").asText()).isNotBlank();
@@ -145,7 +145,7 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         Map<String, Object> login = new LinkedHashMap<>(fetchCaptcha());
         login.put("username", username);
         login.put("password", b64(PASSWORD));
-        Legacy loggedIn = legacyPost("/users/login", login);
+        Legacy loggedIn = legacyPost("/api/v1/legacy/users/login", login);
         assertThat(loggedIn.code()).as("body=%s", loggedIn.body()).isEqualTo(200);
         String token = loggedIn.body().path("token").asText();
         String refreshToken = loggedIn.body().path("refreshToken").asText();
@@ -156,34 +156,34 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         badCaptcha.put("password", b64(PASSWORD));
         badCaptcha.put("captchaId", "bad-id");
         badCaptcha.put("captchaAnswer", md5("0"));
-        Legacy failed = legacyPost("/users/login", badCaptcha);
+        Legacy failed = legacyPost("/api/v1/legacy/users/login", badCaptcha);
         assertThat(failed.httpStatus()).isEqualTo(200);
         assertThat(failed.code()).isEqualTo(400);
 
         // /users/me：Bearer 可用；无 Token → HTTP 401（小程序刷新触发器）
-        Legacy me = legacyGet("/users/me", token);
+        Legacy me = legacyGet("/api/v1/legacy/users/me", token);
         assertThat(me.code()).isEqualTo(200);
         assertThat(me.data().path("username").asText()).isEqualTo(username);
-        Legacy anonymous = rest.getForEntity("/users/me", String.class) == null ? null : null;
-        var noAuth = rest.exchange("/users/me", HttpMethod.GET, new HttpEntity<>(new HttpHeaders()),
+        Legacy anonymous = rest.getForEntity("/api/v1/legacy/users/me", String.class) == null ? null : null;
+        var noAuth = rest.exchange("/api/v1/legacy/users/me", HttpMethod.GET, new HttpEntity<>(new HttpHeaders()),
                 String.class);
         assertThat(noAuth.getStatusCode().value()).isEqualTo(401);
 
         // 刷新：只换 access，refreshToken 不轮换（同一 refreshToken 可再次刷新）
         Map<String, Object> refreshBody = new LinkedHashMap<>();
         refreshBody.put("refreshToken", refreshToken);
-        Legacy refreshed = legacyPost("/users/refresh", refreshBody);
+        Legacy refreshed = legacyPost("/api/v1/legacy/users/refresh", refreshBody);
         assertThat(refreshed.code()).isEqualTo(200);
         String newToken = refreshed.body().path("token").asText();
         assertThat(newToken).isNotEqualTo(token);
         assertThat(refreshed.body().path("refreshToken").asText()).isEmpty();
         // 旧 refreshToken 仍可用（未轮换）
-        Legacy refreshedAgain = legacyPost("/users/refresh", refreshBody);
+        Legacy refreshedAgain = legacyPost("/api/v1/legacy/users/refresh", refreshBody);
         assertThat(refreshedAgain.code()).isEqualTo(200);
         // 无效 refreshToken → 数字 401
         Map<String, Object> bad = new LinkedHashMap<>();
         bad.put("refreshToken", "not-a-real-token");
-        assertThat(legacyPost("/users/refresh", bad).code()).isEqualTo(401);
+        assertThat(legacyPost("/api/v1/legacy/users/refresh", bad).code()).isEqualTo(401);
     }
 
     // ------------------------------------------------------------ 扫码全链路
@@ -192,40 +192,40 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
     void qrLoginFullChainForBoundUser() {
         // 造一个已绑定用户：先 openid 注册
         String openidCode = "mock-qr-" + unique("c");
-        Legacy openid = legacyGet("/wechat/openid/" + openidCode, null);
+        Legacy openid = legacyGet("/api/v1/legacy/wechat/openid/" + openidCode, null);
         String openidValue = openid.body().path("data").path("openid").asText();
         Map<String, Object> register = new LinkedHashMap<>(fetchCaptcha());
         register.put("username", unique("qr"));
         register.put("password", b64("Passw0rd1"));
         register.put("email", unique("qr") + "@test.local");
         register.put("openid", openidValue);
-        assertThat(legacyPost("/users/register", register).code()).isEqualTo(200);
+        assertThat(legacyPost("/api/v1/legacy/users/register", register).code()).isEqualTo(200);
 
         // PC 建会话：旧壳 + sceneId + dataURL 码
-        Legacy session = legacyPost("/qr-login/session", Map.of());
+        Legacy session = legacyPost("/api/v1/legacy/qr-login/session", Map.of());
         assertThat(session.code()).isEqualTo(200);
         String sceneId = session.data().path("sceneId").asText();
         assertThat(sceneId).hasSize(16).matches("[0-9A-Za-z]+");
         assertThat(session.data().path("miniProgramCode").asText()).startsWith("data:image/png;base64,");
 
         // 轮询 pending
-        assertThat(legacyGet("/qr-login/session/" + sceneId, null).data().path("status").asText())
+        assertThat(legacyGet("/api/v1/legacy/qr-login/session/" + sceneId, null).data().path("status").asText())
                 .isEqualTo("pending");
 
         // 码 PNG（no-store）
-        byte[] png = rest.getForObject("/qr-login/session/" + sceneId + "/code.png", byte[].class);
+        byte[] png = rest.getForObject("/api/v1/legacy/qr-login/session/" + sceneId + "/code.png", byte[].class);
         assertThat(png).isNotNull();
         assertThat(png.length).isGreaterThan(100);
 
         // 小程序 entry：同一微信（同 openid 的 code）→ login_ok + 会话确认
-        Legacy entry = legacyPost("/miniapp/qr-login/entry",
+        Legacy entry = legacyPost("/api/v1/legacy/miniapp/qr-login/entry",
                 Map.of("sceneId", sceneId, "code", openidCode));
         assertThat(entry.code()).as("body=%s", entry.body()).isEqualTo(200);
         assertThat(entry.data().path("action").asText()).isEqualTo("login_ok");
         assertThat(entry.data().path("client").path("ip").asText()).isNotBlank();
 
         // PC 轮询 confirmed：一次性 token + user（snake_case）
-        Legacy confirmed = legacyGet("/qr-login/session/" + sceneId, null);
+        Legacy confirmed = legacyGet("/api/v1/legacy/qr-login/session/" + sceneId, null);
         assertThat(confirmed.code()).isEqualTo(200);
         assertThat(confirmed.data().path("status").asText()).isEqualTo("confirmed");
         assertThat(confirmed.data().path("token").asText()).isNotBlank();
@@ -233,7 +233,7 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         assertThat(confirmed.data().path("user").path("avatar_url").asText()).isNotBlank();
 
         // 再轮询 → completed（Token 不再下发）
-        Legacy completed = legacyGet("/qr-login/session/" + sceneId, null);
+        Legacy completed = legacyGet("/api/v1/legacy/qr-login/session/" + sceneId, null);
         assertThat(completed.data().path("status").asText()).isEqualTo("completed");
         assertThat(completed.data().has("token")).isFalse();
     }
@@ -241,14 +241,14 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
     @Test
     void qrEntryUnboundIssuesBindTokenAndRegisterConfirmCompletes() {
         String openidCode = "mock-qr-" + unique("u");
-        Legacy openid = legacyGet("/wechat/openid/" + openidCode, null);
+        Legacy openid = legacyGet("/api/v1/legacy/wechat/openid/" + openidCode, null);
         String openidValue = openid.body().path("data").path("openid").asText();
 
-        Legacy session = legacyPost("/qr-login/session", Map.of());
+        Legacy session = legacyPost("/api/v1/legacy/qr-login/session", Map.of());
         String sceneId = session.data().path("sceneId").asText();
 
         // 未绑定微信：entry → need_register_or_bind + bindToken
-        Legacy entry = legacyPost("/miniapp/qr-login/entry",
+        Legacy entry = legacyPost("/api/v1/legacy/miniapp/qr-login/entry",
                 Map.of("sceneId", sceneId, "code", openidCode));
         assertThat(entry.data().path("action").asText()).isEqualTo("need_register_or_bind");
         String bindToken = entry.data().path("bindToken").asText();
@@ -260,17 +260,17 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         register.put("bindToken", bindToken);
         register.put("username", unique("rq"));
         register.put("password", b64("Passw0rd1"));
-        Legacy confirmed = legacyPost("/miniapp/qr-login/register-and-confirm", register);
+        Legacy confirmed = legacyPost("/api/v1/legacy/miniapp/qr-login/register-and-confirm", register);
         assertThat(confirmed.code()).as("body=%s", confirmed.body()).isEqualTo(200);
         assertThat(confirmed.data().path("status").asText()).isEqualTo("confirmed");
 
         // 同一 bindToken 二次使用 → 失败
         register.put("username", unique("rq2"));
-        Legacy replay = legacyPost("/miniapp/qr-login/register-and-confirm", register);
+        Legacy replay = legacyPost("/api/v1/legacy/miniapp/qr-login/register-and-confirm", register);
         assertThat(replay.code()).isNotEqualTo(200);
 
         // PC 拿到 Token；openid 已绑定新账号
-        Legacy poll = legacyGet("/qr-login/session/" + sceneId, null);
+        Legacy poll = legacyGet("/api/v1/legacy/qr-login/session/" + sceneId, null);
         assertThat(poll.data().path("token").asText()).isNotBlank();
         Integer bound = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM users WHERE openid = ?", Integer.class, openidValue);
@@ -285,12 +285,12 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         Long userId = userId(username);
 
         String openidCode = "mock-qr-" + unique("b");
-        Legacy openid = legacyGet("/wechat/openid/" + openidCode, null);
+        Legacy openid = legacyGet("/api/v1/legacy/wechat/openid/" + openidCode, null);
         String openidValue = openid.body().path("data").path("openid").asText();
 
-        Legacy session = legacyPost("/qr-login/session", Map.of());
+        Legacy session = legacyPost("/api/v1/legacy/qr-login/session", Map.of());
         String sceneId = session.data().path("sceneId").asText();
-        Legacy entry = legacyPost("/miniapp/qr-login/entry",
+        Legacy entry = legacyPost("/api/v1/legacy/miniapp/qr-login/entry",
                 Map.of("sceneId", sceneId, "code", openidCode));
         String bindToken = entry.data().path("bindToken").asText();
 
@@ -300,43 +300,43 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         bind.put("bindToken", bindToken);
         bind.put("username", username);
         bind.put("password", b64(PASSWORD));
-        Legacy bound = legacyPost("/miniapp/qr-login/bind-and-confirm", bind);
+        Legacy bound = legacyPost("/api/v1/legacy/miniapp/qr-login/bind-and-confirm", bind);
         assertThat(bound.code()).as("body=%s", bound.body()).isEqualTo(200);
         assertThat(bound.data().path("status").asText()).isEqualTo("confirmed");
 
         String storedOpenid = jdbc.queryForObject(
                 "SELECT openid FROM users WHERE id = ?", String.class, userId);
         assertThat(storedOpenid).isEqualTo(openidValue);
-        assertThat(legacyGet("/qr-login/session/" + sceneId, null)
+        assertThat(legacyGet("/api/v1/legacy/qr-login/session/" + sceneId, null)
                 .data().path("token").asText()).isNotBlank();
 
         // 错密码 → 400
-        Legacy session2 = legacyPost("/qr-login/session", Map.of());
+        Legacy session2 = legacyPost("/api/v1/legacy/qr-login/session", Map.of());
         String sceneId2 = session2.data().path("sceneId").asText();
-        Legacy entry2 = legacyPost("/miniapp/qr-login/entry",
+        Legacy entry2 = legacyPost("/api/v1/legacy/miniapp/qr-login/entry",
                 Map.of("sceneId", sceneId2, "code", "mock-qr-" + unique("c")));
         Map<String, Object> wrong = new LinkedHashMap<>();
         wrong.put("sceneId", sceneId2);
         wrong.put("bindToken", entry2.data().path("bindToken").asText());
         wrong.put("username", username);
         wrong.put("password", b64("WrongPass1"));
-        assertThat(legacyPost("/miniapp/qr-login/bind-and-confirm", wrong).code()).isEqualTo(400);
+        assertThat(legacyPost("/api/v1/legacy/miniapp/qr-login/bind-and-confirm", wrong).code()).isEqualTo(400);
     }
 
     @Test
     void expiredSessionReturns410AndTimestampFilterRejectsSkewedRequest() throws Exception {
-        Legacy session = legacyPost("/qr-login/session", Map.of());
+        Legacy session = legacyPost("/api/v1/legacy/qr-login/session", Map.of());
         String sceneId = session.data().path("sceneId").asText();
         // 造过期
         jdbc.update(
                 "UPDATE wechat_qr_sessions SET expires_at = DATE_SUB(NOW(3), INTERVAL 1 SECOND) WHERE scene_id = ?",
                 sceneId);
         Thread.sleep(50);
-        Legacy polled = legacyGet("/qr-login/session/" + sceneId, null);
+        Legacy polled = legacyGet("/api/v1/legacy/qr-login/session/" + sceneId, null);
         assertThat(polled.code()).isEqualTo(410);
         assertThat(polled.data().path("status").asText()).isEqualTo("expired");
         // 过期后 entry 也 410（Node 行为）
-        Legacy entry = legacyPost("/miniapp/qr-login/entry",
+        Legacy entry = legacyPost("/api/v1/legacy/miniapp/qr-login/entry",
                 Map.of("sceneId", sceneId, "code", "mock-any"));
         assertThat(entry.code()).isEqualTo(410);
 
@@ -345,12 +345,12 @@ class WechatCompatIntegrationTest extends IdentityTestSupport {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-Request-Time",
                 String.valueOf(System.currentTimeMillis() - 3600_000));
-        var skewed = rest.exchange("/qr-login/session", HttpMethod.POST,
+        var skewed = rest.exchange("/api/v1/legacy/qr-login/session", HttpMethod.POST,
                 new HttpEntity<>(Map.of(), headers), String.class);
         assertThat(skewed.getStatusCode().value()).isEqualTo(200);
         assertThat(parse(skewed.getBody()).path("code").asInt()).isEqualTo(400);
 
         // 未知 sceneId → 404
-        assertThat(legacyGet("/qr-login/session/no-such-scene", null).code()).isEqualTo(404);
+        assertThat(legacyGet("/api/v1/legacy/qr-login/session/no-such-scene", null).code()).isEqualTo(404);
     }
 }

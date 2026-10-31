@@ -37,7 +37,7 @@ class WechatDisabledIntegrationTest extends IdentityTestSupport {
 
         // 旧协议兼容层：code 换 openid → 旧壳（HTTP 200 + 数字 code:0 + errcode:503），
         // request.js 判定习惯不允许直接抛 HTTP 503（LegacyWechatCompatController.openid 的 catch 分支）
-        var openid = get("/wechat/openid/any-code", null);
+        var openid = get("/api/v1/legacy/wechat/openid/any-code", null);
         assertThat(openid.status()).isEqualTo(200);
         assertThat(openid.body().path("code").asInt()).isZero();
         assertThat(openid.body().path("errcode").asInt()).isEqualTo(503);
