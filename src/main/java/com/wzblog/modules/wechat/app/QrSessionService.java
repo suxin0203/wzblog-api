@@ -610,7 +610,11 @@ public class QrSessionService {
         }
     }
 
-    private static String maskIp(String ip) {
+    /**
+     * IP 脱敏：IPv4 保留前两段（112.10.*.*）；IPv6 回环（本地调试来源）标注「本机」；
+     * 其他 IPv6 保留前两组（2408:8207:…）。包级可见供同包单测直调。
+     */
+    static String maskIp(String ip) {
         if (ip == null || ip.isBlank()) {
             return "";
         }
@@ -619,7 +623,11 @@ public class QrSessionService {
             String[] parts = value.split("\\.");
             return parts[0] + "." + parts[1] + ".*.*";
         }
-        return value.length() > 12 ? value.substring(0, 12) + "…" : value;
+        if ("::1".equals(value) || value.replace("0", "").replace(":", "").equals("1")) {
+            return "本机";
+        }
+        String[] groups = value.split(":");
+        return groups.length > 2 ? groups[0] + ":" + groups[1] + ":…" : value;
     }
 
     private static String truncate(String value, int max) {

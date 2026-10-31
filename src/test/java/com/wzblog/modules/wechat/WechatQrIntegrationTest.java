@@ -125,7 +125,11 @@ class WechatQrIntegrationTest extends IdentityTestSupport {
         assertThat(client.path("channel").asText()).isEqualTo("pc");
         assertThat(client.path("channel_label").asText()).isEqualTo("电脑网页");
         assertThat(client.path("is_mobile").asBoolean()).isFalse();
-        assertThat(client.path("ip").asText()).endsWith("*.*");
+        String maskedIp = client.path("ip").asText();
+        // 测试 JVM 视 localhost 可能解析为 IPv4 回环（127.0.*.*）或 IPv6 回环（本机）
+        org.assertj.core.api.Assertions.assertThat(maskedIp).satisfiesAnyOf(
+                v -> assertThat(v).endsWith("*.*"),
+                v -> assertThat(v).isEqualTo("本机"));
 
         // 码 PNG：image/png；二次命中缓存
         ResponseEntity<byte[]> png = rest.getForEntity(
