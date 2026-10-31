@@ -17,6 +17,7 @@ public record RegisterRequest(
                 message = "密码需为 8~64 位可见 ASCII 且同时包含字母和数字")
         String password,
 
+        @NotBlank(message = "邮箱不能为空")
         @Email(message = "邮箱格式不正确")
         @Size(max = 150, message = "邮箱长度不能超过 150")
         String email,

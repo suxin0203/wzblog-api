@@ -56,7 +56,7 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         assertThat(dbRow.get("nickname")).isEqualTo(username);
         assertThat((String) dbRow.get("password_hash")).startsWith("$2");
 
-        HttpResult duplicateName = registerRaw(username, PASSWORD, null);
+        HttpResult duplicateName = registerRaw(username, PASSWORD, unique("de") + "@test.local");
         assertThat(duplicateName.status()).isEqualTo(409);
         assertThat(duplicateName.code()).isEqualTo("USER_USERNAME_TAKEN");
 
@@ -67,18 +67,24 @@ class IdentityIntegrationTest extends IdentityTestSupport {
 
     @Test
     void registerRejectsWeakPasswordAndInvalidUsername() {
-        HttpResult weak = registerRaw(unique("wk"), "abc123", null);
+        HttpResult weak = registerRaw(unique("wk"), "abc123", unique("we") + "@test.local");
         assertThat(weak.status()).isEqualTo(400);
         assertThat(weak.code()).isEqualTo("COMMON_VALIDATION_ERROR");
         assertThat(weak.error("password")).isNotBlank();
 
-        HttpResult shortName = registerRaw("ab", PASSWORD, null);
+        HttpResult shortName = registerRaw("ab", PASSWORD, unique("sn") + "@test.local");
         assertThat(shortName.status()).isEqualTo(400);
         assertThat(shortName.error("username")).isNotBlank();
 
-        HttpResult reservedName = registerRaw("deleted_abc", PASSWORD, null);
+        HttpResult reservedName = registerRaw("deleted_abc", PASSWORD, unique("rv") + "@test.local");
         assertThat(reservedName.status()).isEqualTo(400);
         assertThat(reservedName.error("username")).isNotBlank();
+
+        // 邮箱必填（v1.6.6）：缺 email → 400 COMMON_VALIDATION_ERROR + errors.email
+        HttpResult noEmail = registerRaw(unique("ne"), PASSWORD, null);
+        assertThat(noEmail.status()).isEqualTo(400);
+        assertThat(noEmail.code()).isEqualTo("COMMON_VALIDATION_ERROR");
+        assertThat(noEmail.error("email")).isNotBlank();
     }
 
     @Test
@@ -87,6 +93,7 @@ class IdentityIntegrationTest extends IdentityTestSupport {
         Map<String, Object> registerBody = new LinkedHashMap<>();
         registerBody.put("username", username);
         registerBody.put("password", PASSWORD);
+        registerBody.put("email", unique("nocap") + "@test.local"); // v1.6.6 起邮箱必填
         HttpResult created = post("/api/v1/auth/register", registerBody, null);
         assertThat(created.status()).isEqualTo(200);
         assertThat(created.data().path("id").isTextual()).isTrue();

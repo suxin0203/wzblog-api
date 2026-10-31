@@ -148,9 +148,14 @@ public abstract class IdentityTestSupport {
         return post("/api/v1/auth/register", registerBody(username, password, email, null), null);
     }
 
-    /** 注册并断言 200（统一成功码），返回用户 ID 字符串。 */
+    /**
+     * 注册并断言 200（统一成功码），返回用户 ID 字符串。
+     * email 为 null 时自动生成唯一地址（v1.6.6 起注册接口必填 email；仅便捷 helper 兜底，
+     * registerRaw 保持透传供失败用例显式构造缺参场景）。
+     */
     protected String register(String username, String password, String email) {
-        HttpResult result = registerRaw(username, password, email);
+        HttpResult result = registerRaw(username, password,
+                email == null ? unique("em") + "@test.local" : email);
         org.assertj.core.api.Assertions.assertThat(result.status()).as("register status: " + result.body()).isEqualTo(200);
         return result.data().path("id").asText();
     }

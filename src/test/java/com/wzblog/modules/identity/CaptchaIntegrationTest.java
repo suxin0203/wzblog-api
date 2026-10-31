@@ -69,7 +69,7 @@ class CaptchaIntegrationTest extends IdentityTestSupport {
     }
 
     private HttpResult registerWithCaptcha(String username, String captchaCode, String captchaId) {
-        Map<String, Object> body = registerBody(username, "Passw0rd1", null, null);
+        Map<String, Object> body = registerBody(username, "Passw0rd1", unique("ce") + "@test.local", null);
         body.put("captchaId", captchaId);
         body.put("captchaCode", captchaCode);
         return post("/api/v1/auth/register", body, null);
