@@ -67,7 +67,7 @@
 | AI 对话 / 统计 | `modules/ai/` | `api/AiChatController.java`、`app/AiChatOrchestrator.java`、`app/AiSessionAppService.java` |
 | 后台运营（轮播/友链/称号/站点配置） | `modules/admin/` | `api/OperationsController.java`、`api/AdminTitleController.java`、`app/OperationsAppService.java` |
 | 登录 / 用户 / 权限 | `modules/identity/` + `config/` | `config/SecurityConfig.java`、`common/security/` |
-| 小程序旧协议（**别动**） | `modules/wechat/` | 兼容层：HTTP 200 + 数字 code |
+| 小程序旧协议（兼容层，v1.6.7 起挂 `/api/v1/legacy` 前缀） | `modules/wechat/` + `identity/api/compat/` | HTTP 200 + 数字 code + snake_case |
 | 统一响应 / 异常 / 错误码 | `common/api/`、`common/error/` | `Result.java`、`GlobalExceptionHandler.java`、`ErrorCode.java` |
 | 请求 DTO（校验注解在这） | 各模块 `api/` | `*Request.java`、`*UpsertRequest.java` |
 | SQL | 各模块 `infra/*.xml` | 改查询优先看 XML，不要只改注解 |
@@ -121,7 +121,7 @@
 | 迁移 | Flyway 版本化脚本（`db/` 与 `src/main/resources`），`V1__schema.sql` 为基线；**禁止修改已执行的历史脚本** |
 | 测试 | `mvn test`（集成测试走 Testcontainers MySQL）；基线 **153 通过**；另有 ArchUnit 架构测试 |
 | 契约导出 | springdoc → `/v3/api-docs`；产物 `docs/api/openapi.yaml`（**禁止手改**，改代码后重新导出） |
-| 遗留兼容层 | `modules/wechat` = 旧协议兼容（HTTP 200 + 数字 code）；**不要拿它当新接口范例** |
+| 遗留兼容层 | `modules/wechat` = 旧协议兼容（v1.6.7 起路径挂 `/api/v1/legacy` 前缀；HTTP 200 + 数字 code）；**不要拿它当新接口范例** |
 
 ### 1.2 前端
 
