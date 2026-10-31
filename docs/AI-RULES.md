@@ -365,6 +365,8 @@ J4 Docker 掉线：先 `docker ps`，恢复容器后应用会自动重连；数�
 J5 日志：启动日志确认 "Started ... in X seconds"；运行期 grep ERROR / WARN 分类
 J6 部署产物：后端 `mvn -DskipTests package` → jar；前端 `npm run build` → `dist/`
 J7 变更环境配置 = 阻断项（除明确授权），尤其时区、连接串、profile
+J8 每次修改完后端代码后，记得重启 Java 服务（IDE 手动运行 = 负责人重启；
+   否则浏览器/联调验证跑的是旧代码，新端点 404、行为对不上），重启后先 health 200
 ```
 
 ### K｜诊断 / 答疑（L1，只读）
@@ -672,5 +674,13 @@ git revert <commit>            # 回滚（禁止 reset 已推送提交）
 | 技术栈 / 端口 / 测试基线变化 | §1 |
 | 新增任务类型 | §4 追加 SOP，§3 决策树补分支 |
 | 每次重大收口 | 头部「版本 / commit」 |
+
+---
+
+## 数据修正记录（D 类报备，不占用 D 编号）
+
+| 日期 | 对象 | 操作 | 原因 | 回滚 |
+|---|---|---|---|---|
+| 2026-10-31 | users id=1018（wx_ahhgbcidfcbj，WECHAT 自动账号）/ id=1001（debug_admin） | 1018 匿名化软删（username/openid→deleted_1018、unionid 清空），openid 移交 1001（条件更新 openid IS NULL，均 1 行） | 负责人要求：微信扫码登录绑定管理员账号，便于真机联调；自动账号弃用 | `backup/reverse-20261031-openid-to-debug_admin.sql`（原值备份 `backup/users-1001-1018-20261031-backup.sql`） |
 
 > 规则只增不改语义。要推翻旧规则，必须在 `docs/decisions.md` 留一条决策记录，说明原因。
