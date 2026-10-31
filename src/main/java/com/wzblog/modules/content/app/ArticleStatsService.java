@@ -45,6 +45,38 @@ public class ArticleStatsService {
         this.redis = redis;
     }
 
+    /**
+     * 只读读取当日阅读计数（HGETALL 求和，不取走——drain 仍归 03:10 聚合任务独占）。
+     * 供管理端概览的 todayViews 实时口径（v1.6.8）。
+     */
+    public DailyViews peekDailyViews(LocalDate date) {
+        LocalDate day = date == null ? LocalDate.now(BUSINESS_ZONE) : date;
+        String suffix = DAY.format(day);
+        String articleKey = "content:views:" + suffix;
+        String sourceKey = "content:views:source:" + suffix;
+        try {
+            Map<Object, Object> articleRaw = redis.opsForHash().entries(articleKey);
+            Map<Object, Object> sourceRaw = redis.opsForHash().entries(sourceKey);
+            int internal = parseIntOrZero(sourceRaw.get("internal"));
+            int external = parseIntOrZero(sourceRaw.get("external"));
+            return new DailyViews(Map.of(), internal, external);
+        } catch (DataAccessException ex) {
+            log.warn("当日阅读计数读取失败，按空结果返回, date={}", suffix, ex);
+            return new DailyViews(Map.of(), 0, 0);
+        }
+    }
+
+    private static int parseIntOrZero(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
     public DailyViews drainDailyViews(LocalDate date) {
         LocalDate day = date == null ? LocalDate.now(BUSINESS_ZONE) : date;
         String suffix = DAY.format(day);

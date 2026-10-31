@@ -31,19 +31,22 @@ public class DashboardAppService {
     private final AiSessionAppService aiSessionAppService;
     private final com.wzblog.modules.interaction.app.InteractionStatsService interactionStatsService;
     private final com.wzblog.modules.points.app.PointsQueryService pointsQueryService;
+    private final com.wzblog.modules.content.app.ArticleStatsService articleStatsService;
 
     public DashboardAppService(DailyStatsMapper dailyStatsMapper,
                                AuditQueryMapper auditQueryMapper,
                                UserQueryService userQueryService,
                                AiSessionAppService aiSessionAppService,
                                com.wzblog.modules.interaction.app.InteractionStatsService interactionStatsService,
-                               com.wzblog.modules.points.app.PointsQueryService pointsQueryService) {
+                               com.wzblog.modules.points.app.PointsQueryService pointsQueryService,
+                               com.wzblog.modules.content.app.ArticleStatsService articleStatsService) {
         this.dailyStatsMapper = dailyStatsMapper;
         this.auditQueryMapper = auditQueryMapper;
         this.userQueryService = userQueryService;
         this.aiSessionAppService = aiSessionAppService;
         this.interactionStatsService = interactionStatsService;
         this.pointsQueryService = pointsQueryService;
+        this.articleStatsService = articleStatsService;
     }
 
     /**
@@ -66,6 +69,9 @@ public class DashboardAppService {
         long[] points = pointsQueryService.sumIssuedAndConsumedBetween(from, to);
         result.put("todayPointsIssued", points[0]);
         result.put("todayPointsConsumed", points[1]);
+        // v1.6.8：当日浏览实时口径（Redis 日计数只读求和；drain 仍归 03:10 聚合任务）
+        var todayViews = articleStatsService.peekDailyViews(today);
+        result.put("todayViews", todayViews.internal() + todayViews.external());
         return result;
     }
 
