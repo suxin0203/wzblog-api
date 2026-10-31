@@ -149,7 +149,7 @@ docker compose exec -T mysql mysql -uroot -p"$DB_ROOT_PASSWORD" -N -e   "select 
 | 字段级 DTO | [docs/archive/design/modules/](docs/archive/design/modules/)：M1~M8 模块设计（历史归档） |
 | 在线调试 | 启动后访问 `http://localhost:8021/swagger-ui.html`（右上角 Authorize 填 accessToken） |
 | OpenAPI JSON | `http://localhost:8021/v3/api-docs` |
-| 小程序旧协议 | [docs/archive/plans/13-微信扫码复原计划.md](docs/archive/plans/13-微信扫码复原计划.md)（历史归档）（`/wechat/*`、`/qr-login/*`、`/miniapp/*`、`/users/*`） |
+| 小程序旧协议 | [docs/16-小程序旧协议兼容.md](docs/16-小程序旧协议兼容.md)（权威，v1.6.7 起统一挂 `/api/v1/legacy` 前缀） |
 | Web 前端 API 层 | 同级项目 `wzblog-frontend/src/api/`（axios 封装在 `src/utils/request.ts`） |
 
 ## 🗺️ 文档地图
