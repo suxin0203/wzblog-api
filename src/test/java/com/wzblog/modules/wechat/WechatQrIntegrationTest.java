@@ -1,5 +1,6 @@
 package com.wzblog.modules.wechat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.wzblog.support.IdentityTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -115,11 +116,16 @@ class WechatQrIntegrationTest extends IdentityTestSupport {
         long ttl = ((Number) row.get("ttl")).longValue();
         assertThat(ttl).isBetween(100L, 120L);
 
-        // 轮询 PENDING
+        // 轮询 PENDING（v1.6.5：client 来源环境，snake_case，IP 脱敏）
         var poll = get("/api/v1/auth/qr/sessions/" + sceneId, null);
         assertThat(poll.code()).isEqualTo("OK");
         assertThat(poll.data().path("status").asText()).isEqualTo("PENDING");
         assertThat(poll.data().path("ticket").isNull()).isTrue();
+        JsonNode client = poll.data().path("client");
+        assertThat(client.path("channel").asText()).isEqualTo("pc");
+        assertThat(client.path("channel_label").asText()).isEqualTo("电脑网页");
+        assertThat(client.path("is_mobile").asBoolean()).isFalse();
+        assertThat(client.path("ip").asText()).endsWith("*.*");
 
         // 码 PNG：image/png；二次命中缓存
         ResponseEntity<byte[]> png = rest.getForEntity(

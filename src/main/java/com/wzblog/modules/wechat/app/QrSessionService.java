@@ -349,18 +349,24 @@ public class QrSessionService {
         if (session.getExpiresAt().isBefore(now) || QrSession.EXPIRED.equals(session.getStatus())) {
             sessionMapper.expireIfDue(sceneId, now);
             evictStatus(sceneId);
-            return new QrStatus(sceneId, "EXPIRED", null, null);
+            return new QrStatus(sceneId, "EXPIRED", null, null, describeClient(session));
         }
+        Map<String, Object> client = describeClient(session);
         return switch (session.getStatus()) {
-            case QrSession.PENDING -> new QrStatus(sceneId, "PENDING", null, session.getExpiresAt());
+            case QrSession.PENDING -> new QrStatus(sceneId, "PENDING", null, session.getExpiresAt(), client);
             case QrSession.CONFIRMED -> new QrStatus(sceneId, "CONFIRMED",
-                    redis.opsForValue().get(TICKET_BY_SCENE_PREFIX + sceneId), null);
-            default -> new QrStatus(sceneId, "COMPLETED", null, null);
+                    redis.opsForValue().get(TICKET_BY_SCENE_PREFIX + sceneId), null, client);
+            default -> new QrStatus(sceneId, "COMPLETED", null, null, client);
         };
     }
 
-    /** 轮询状态视图；仅 CONFIRMED 返回 ticket，COMPLETED/EXPIRED 恒为 null。 */
-    public record QrStatus(String sceneId, String status, String ticket, LocalDateTime expiresAt) {
+    /**
+     * 轮询状态视图；仅 CONFIRMED 返回 ticket，COMPLETED/EXPIRED 恒为 null。
+     * client = 来源环境描述（复用旧协议 describeClient：snake_case，IP 已脱敏），
+     * 供小程序确认页在用户点「确认」前展示扫码来源（v1.6.5 契约）。
+     */
+    public record QrStatus(String sceneId, String status, String ticket, LocalDateTime expiresAt,
+                           Map<String, Object> client) {
     }
 
     /**

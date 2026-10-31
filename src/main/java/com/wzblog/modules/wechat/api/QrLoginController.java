@@ -89,7 +89,7 @@ public class QrLoginController {
                                    HttpServletRequest httpRequest) {
         var status = qrSessions.pollQrStatus(sceneId, ClientInfo.from(httpRequest).ip());
         return Result.ok(new QrStatusVO(status.sceneId(), status.status(),
-                status.ticket(), status.expiresAt()));
+                status.ticket(), status.expiresAt(), status.client()));
     }
 
     /** 小程序码 PNG 二进制（统一响应壳显式例外；no-store 防缓存陈旧码）。 */
