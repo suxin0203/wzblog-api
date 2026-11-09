@@ -1,10 +1,12 @@
-﻿# WzBlog Backend · 文栈博客后端
+# WzBlog Backend · 文栈博客后端
 
 [![CI](https://github.com/suxin0203/wzblog-api/actions/workflows/ci.yml/badge.svg)](https://github.com/suxin0203/wzblog-api/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/suxin0203/wzblog-api/branch/master/graph/badge.svg)](https://codecov.io/gh/suxin0203/wzblog-api)
 [![Java](https://img.shields.io/badge/Java-21-orange)](https://adoptium.net)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**🌐 线上地址：<https://blog.suxin23.cn>**（前后端同域部署：Nginx 托管 Vue 3 静态站，`/api/v1` 与 `/media` 反代本服务）
 
 一个**功能完整、经过并发与安全验证**的模块化单体博客后端：单人技术博客 + 受邀作者 + 读者社区 + 积分权益。内容主权归作者（EDITOR 只能编辑自己的文章、审自己文章下的评论），平台主权归站主（ADMIN 负责治理与履约，改他人正文需先“接管”）；Markdown 内容、双 Token 认证、不可变积分账本（反转按原收款人）、媒体引用计数、AI 站内助手（SSE + 工具调用）、运营看板——所有能力均有集成测试背书，跑在真实 MySQL/Redis 容器上。
 
@@ -24,10 +26,10 @@ docker compose up -d mysql redis && ./scripts/run.sh   # → http://localhost:80
 | **积分 (points)** | **不可变账本**（行锁串行 + 幂等键 + 锁内日上限 + 反转不透余额）、**反转按原流水收款人（接管不错账）**、软删/隐藏不反转（D13）、下单六步事务（条件扣库存防超卖）、订单状态机 + 退款回补、称号、管理员调分审计、对账修复 |
 | **媒体 (media)** | 预签名直传（本地 HMAC 能力 URL / 预留 MinIO 双 adapter）、魔数 + 解压炸弹防护、EXIF 方向修正、异步缩略图、sha256 去重（同上传者域）、引用计数、孤儿清理任务 |
 | **AI (ai)** | SSE 流式对话（session→tool→delta→done 协议）、6 个只读工具白名单、三层配额（分钟/日/并发 Lua 原子）、游客会话令牌、摘要/标签建议、Mock/OpenAI 双上游 |
-| **微信 (wechat)** | 小程序扫码登录状态机（PENDING→CONFIRMED→COMPLETED）、bindToken 一次性、**已上线小程序零改动兼容层**（旧协议壳 + 新安全内核） |
+| **微信 (wechat)** | 小程序扫码登录状态机（PENDING→CONFIRMED→COMPLETED，ticket 一次性换票）；新契约 9 条（`/api/v1/auth/wechat/*`、`/api/v1/auth/qr/*`）+ 旧协议兼容层 13 条（挂 `/api/v1/legacy` 前缀，已上线小程序在用） |
 | **运营 (admin)** | 配置白名单 CRUD（JSON 列对称编解码）、轮播/友链、看板 6 接口（实时 + 预聚合）、审计日志、日统计任务 |
 
-**121 个集成测试** · Testcontainers 真库 · ArchUnit 架构守护 · 覆盖率门禁 ≥70%（实测 79%+）
+**167 个测试全绿**（含 160+ 集成测试 + ArchUnit 架构守护）· Testcontainers 真库 · 覆盖率门禁 ≥70%
 
 ## 🏗️ 架构
 
@@ -62,6 +64,7 @@ com.wzblog
 # 前置：JDK 21、Docker
 git clone https://github.com/suxin0203/wzblog-api.git && cd wzblog-api
 cp .env.example .env          # 填 DB_PASSWORD / JWT_SECRET（32+ 随机字节）
+# 前端（Vue 3 + Vite）：同级仓库 wzblog-frontend，npm run dev 后走 vite 代理
 
 docker compose up -d mysql redis   # MySQL 8 + Redis 7
 ./scripts/run.sh                   # Flyway 自动建 32 张表 + 种子数据
@@ -70,10 +73,12 @@ curl http://localhost:8021/api/v1/ping
 # Swagger UI → http://localhost:8021/swagger-ui.html
 ```
 
+**文档**：接口契约 [docs/api/接口对接文档.md](docs/api/接口对接文档.md)（v1.6.8，与代码同步）· 文档地图 [docs/README.md](docs/README.md) · 工程规范 [docs/AI-RULES.md](docs/AI-RULES.md)；其余开发/验收过程文档已归档（见 docs/archive/README.md）。
+
 **测试**（Testcontainers 起真实容器，非内存库）：
 
 ```bash
-./scripts/mvn.sh verify            # 121 集成测试 + ArchUnit + 覆盖率门禁
+./scripts/mvn.sh verify            # 167 测试 + ArchUnit + 覆盖率门禁
 # 覆盖率报告 → target/site/jacoco/index.html
 ```
 
