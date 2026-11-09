@@ -45,6 +45,8 @@ jobs:
         run: set -o pipefail; mvn -B -ntp verify 2>&1 | tee /tmp/mvn-verify.log
         env:
           WZBLOG_TESTCONTAINERS: "1"
+          # ApplicationSmokeTest 启动完整上下文：UrlSigner 要求 url-secret（回退 JWT_SECRET）≥32 字节
+          JWT_SECRET: "ci-test-jwt-secret-0123456789abcdef0123456789abcdef"
       - name: Failure digest
         if: failure()
         env:

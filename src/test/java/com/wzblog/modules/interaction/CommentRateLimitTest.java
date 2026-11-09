@@ -27,7 +27,12 @@ class CommentRateLimitTest extends IdentityTestSupport {
 
     @Test
     void secondCommentWithinWindowIsLimited() {
-        String token = adminToken();
+        // 限流键为 u:{userId}：bootstrap_admin 被全测试共享，短窗口状态会被
+        // 先执行的评论类用例（共享 Redis 容器）暖热——CI 上首条评论即 429。
+        // 改用独立新注册用户，窗口天然干净，用例只验证「第二条被限」这一契约。
+        String username = unique("rl");
+        register(username, PASSWORD, username + "@test.local");
+        String token = accessToken(username, PASSWORD);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("title", unique("rl"));
         body.put("contentMd", "# t\n\nbody");
