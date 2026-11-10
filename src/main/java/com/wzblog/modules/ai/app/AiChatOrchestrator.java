@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -192,19 +193,18 @@ public class AiChatOrchestrator {
             placeholder.setCreatedAt(Times.nowUtc());
             messageMapper.insertMessage(placeholder);
 
-            // 步骤 5：流式输出
+            // 步骤 5：流式输出（openai=上游真流式增量回调；mock=确定性分片，SSE 协议一致）
             StringBuilder full = new StringBuilder();
-            List<String> chunks = chatClient.stream(context);
             int promptTokens = 0;
-            int completionTokens = 0;
-            for (String chunk : chunks) {
+            AtomicInteger completionTokens = new AtomicInteger(0);
+            chatClient.stream(context, (chunk) -> {
                 full.append(chunk);
                 send(emitter, "delta", Map.of("text", chunk));
-                completionTokens += 8; // mock 计数；openai 实现取 usage
-            }
+                completionTokens.addAndGet(8); // 估算计数：真流式 usage 不随增量下发（行为不变）
+            });
             long latency = System.currentTimeMillis() - startedAt;
             messageMapper.finishStreaming(placeholder.getId(), full.toString(), "COMPLETE",
-                    promptTokens, completionTokens, (int) latency, chatClient.modelName(),
+                    promptTokens, completionTokens.get(), (int) latency, chatClient.modelName(),
                     Times.nowUtc());
             sessionMapper.bumpMessageCount(session.getId(), 1, Times.nowUtc());
 

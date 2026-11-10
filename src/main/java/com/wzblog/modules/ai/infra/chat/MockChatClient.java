@@ -4,8 +4,8 @@ import com.wzblog.modules.ai.infra.config.AiProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Mock 上游：确定性应答，便于无 Key 环境跑通全链路与测试。
@@ -40,7 +40,16 @@ public class MockChatClient implements ChatClient {
     }
 
     @Override
-    public List<String> stream(List<ChatMessage> messages) {
+    public void stream(List<ChatMessage> messages, Consumer<String> onDelta) {
+        String answer = buildAnswer(messages);
+        // 按 ~24 字符分片，模拟流式节奏
+        for (int i = 0; i < answer.length(); i += 24) {
+            onDelta.accept(answer.substring(i, Math.min(answer.length(), i + 24)));
+        }
+    }
+
+    /** 确定性应答文本：带工具结果时基于检索结果组织，否则直接应答。 */
+    private String buildAnswer(List<ChatMessage> messages) {
         String lastUser = lastUserContent(messages);
         boolean hasToolResult = messages.stream()
                 .anyMatch(message -> "tool".equals(message.role()));
@@ -58,12 +67,7 @@ public class MockChatClient implements ChatClient {
                     .append(lastUser, 0, Math.min(lastUser.length(), 100))
                     .append("」——当前为本地模拟模式，未连接真实模型；部署后配置 wzblog.ai.provider=openai 即可启用真实问答。");
         }
-        // 按 ~24 字符分片，模拟流式节奏
-        List<String> chunks = new ArrayList<>();
-        for (int i = 0; i < answer.length(); i += 24) {
-            chunks.add(answer.substring(i, Math.min(answer.length(), i + 24)));
-        }
-        return chunks;
+        return answer.toString();
     }
 
     @Override

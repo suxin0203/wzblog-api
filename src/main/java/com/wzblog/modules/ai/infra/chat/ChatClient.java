@@ -1,20 +1,21 @@
 package com.wzblog.modules.ai.infra.chat;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
- * 聊天上游端口：工具轮（非流式）与最终回答（流式分片）。
- * <p>mock 实现用于本地与测试；openai 实现走 OpenAI 兼容 /chat/completions。
- * 真流式 SSE 解析上游 chunk 需在接入真实 Key 后启用，当前 openai 实现
- * 以「非流式上游 + 服务端分片下发」满足同一 SSE 协议（docs/archive/reports/11-本地环境与运行.md 登记偏差）。</p>
+ * 聊天上游端口：工具轮（非流式）与最终回答（真流式增量回调）。
+ * <p>mock 实现用于本地与测试（确定性分片）；openai 实现以 stream=true 调用
+ * OpenAI 兼容 /chat/completions，逐行解析 SSE data 帧，上游每产出一个增量即回调 onDelta，
+ * 前端看到的 SSE 协议（session → (tool)* → delta* → done|error）保持不变。</p>
  */
 public interface ChatClient {
 
     /** 工具轮：返回文本或工具调用（可空）。 */
     ChatCompletion complete(List<ChatMessage> messages, List<ToolSpec> tools);
 
-    /** 最终回答：按小块流式返回，已按服务端节奏切分。 */
-    List<String> stream(List<ChatMessage> messages);
+    /** 最终回答：真流式——上游每产出一个文本增量即回调 onDelta（mock 为确定性分片）。 */
+    void stream(List<ChatMessage> messages, Consumer<String> onDelta);
 
     /** 上游模型名（落库 ai_messages.model）。 */
     String modelName();
