@@ -60,9 +60,11 @@ public class AiChatController {
             @RequestHeader(value = "X-AI-Session-Token", required = false) String guestToken,
             @PathVariable("sessionId") String sessionId,
             @RequestParam(value = "cursor", required = false) Long afterId,
-            @RequestParam(value = "size", defaultValue = "20") int size) {
+            @RequestParam(value = "size", defaultValue = "20") int size,
+            // v1.6.10：可选下发 TOOL 过程记录（默认 false 向后兼容）；前端用于恢复历史步骤条
+            @RequestParam(value = "includeTool", defaultValue = "false") boolean includeTool) {
         return ResponseEntity.ok(Result.ok(sessionAppService.messages(user, guestToken, sessionId,
-                afterId, size, false)));
+                afterId, size, includeTool)));
     }
 
     @DeleteMapping("/sessions/{sessionId}")

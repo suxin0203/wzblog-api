@@ -174,7 +174,7 @@ class AiIntegrationTest extends IdentityTestSupport {
                 HttpMethod.GET, new HttpEntity<>(headers), String.class);
         assertThat(response.getStatusCode().value()).isEqualTo(401);
 
-        // 正确令牌可读消息（默认无 TOOL 行）
+        // 正确令牌可读消息（默认无 TOOL 行；v1.6.10 起 includeTool=true 可选下发）
         headers.set("X-AI-Session-Token", token);
         response = rest.exchange("/api/v1/ai/sessions/" + sessionId + "/messages",
                 HttpMethod.GET, new HttpEntity<>(headers), String.class);
@@ -182,6 +182,14 @@ class AiIntegrationTest extends IdentityTestSupport {
         try {
             JsonNode list = objectMapper.readTree(response.getBody()).path("data");
             assertThat(list.size()).isEqualTo(2);
+
+            // includeTool=true：USER/TOOL/ASSISTANT 三行都返回
+            response = rest.exchange(
+                    "/api/v1/ai/sessions/" + sessionId + "/messages?includeTool=true",
+                    HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            JsonNode listWithTool = objectMapper.readTree(response.getBody()).path("data");
+            assertThat(listWithTool.size()).isEqualTo(3);
+            assertThat(listWithTool.get(1).path("role").asText()).isEqualTo("TOOL");
         } catch (Exception ex) {
             throw new IllegalStateException(ex);
         }
