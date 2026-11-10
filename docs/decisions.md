@@ -209,3 +209,5 @@ D63/D64 已按规划方原文逐字写入（行为变更预演 / 既有约束不
 
 - D97 历史文档一律移出仓库（2026-10-31 执行）：docs/archive 下 52 个历史文档打包到 backup/docs-archive-20261031.zip 并 git rm，仓库内只保留 docs/archive/README.md 说明页；找回方式 = `git checkout docs-archive-ref -- <path>`（tag 指向 e0a0c00）或解 zip。理由：过期文档留在工作区会被 grep 命中，导致按旧口径改代码。
 - D98 线上在用的兼容协议文档例外：`modules/wechat` 的 13 条旧协议路由有真实小程序在跑，原 13-微信扫码复原计划已提升为权威文档 docs/16-小程序旧协议兼容.md，不得归档。
+- 【待分配编号·待规划方确认】AI 最终回答真流式升级（2026-11-11）：OpenAiCompatChatClient 以 stream=true 调 OpenAI 兼容上游并逐行解析 SSE data 帧，ChatClient.stream 由「返回全部分片」改为增量回调（Consumer<String>）；mock 实现保持确定性分片，前端 SSE 协议（session→tool*→delta*→done|error）不变；done.usage 仍为估算值（真流式 usage 不随增量下发，保持既有行为）。消除 docs/archive/reports/11 登记的「伪流式」偏差。
+- 【待分配编号·待规划方确认】前台体验口径（2026-11-11）：① AI 悬浮球常驻显示（滚动显隐判定为 bug）；② AI 配额徽标在 done 事件后静默刷新 GET /ai/quota；③ 设备会话列表超 5 台默认折叠（refresh token TTL 14 天，过期会话已由后端自动滤除，不显示已下线设备）；④ 首页与文章列表滚动到底自动加载下一页（IntersectionObserver，不支持时保留手动按钮）；⑤ 移动端 header 主导航与搜索折叠进抽屉（≤768px）。
