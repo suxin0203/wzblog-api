@@ -85,7 +85,7 @@
 | 路由与守卫 | `src/router/`、`src/router/guards.ts` |
 | 时间处理（**唯一入口**） | `src/utils/datetime.ts` |
 | 类型定义 | `src/types/` |
-| SSE / hooks | `src/hooks/`（`useNotificationStream.ts`） |
+| SSE / hooks | `src/hooks/`（`useNotificationStream.ts`、`useInfiniteLoad.ts`） |
 
 `src/api/` 文件清单：`article.ts`、`comment.ts`、`guestbook.ts`、`aiChat.ts`、`auth.ts`、`user.ts`、`notification.ts`、`points.ts`、`adminPoints.ts`、`operation.ts`、`category.ts`、`tag.ts`、`dashboard.ts`、`upload.ts`、`system.ts`、`reaction.ts`
 
@@ -119,7 +119,7 @@
 | 端口 / profile | **8021** / `local`；本地配置 `application-local.yml`（**禁止写入密钥/口令**，用环境变量） |
 | 健康检查 | `GET /actuator/health` → `UP` |
 | 迁移 | Flyway 版本化脚本（`db/` 与 `src/main/resources`），`V1__schema.sql` 为基线；**禁止修改已执行的历史脚本** |
-| 测试 | `mvn test`（集成测试走 Testcontainers MySQL）；基线 **153 通过**；另有 ArchUnit 架构测试 |
+| 测试 | `mvn test`（集成测试走 Testcontainers MySQL）；基线 **167 通过**；另有 ArchUnit 架构测试 |
 | 契约导出 | springdoc → `/v3/api-docs`；产物 `docs/api/openapi.yaml`（**禁止手改**，改代码后重新导出） |
 | 遗留兼容层 | `modules/wechat` = 旧协议兼容（v1.6.7 起路径挂 `/api/v1/legacy` 前缀；HTTP 200 + 数字 code）；**不要拿它当新接口范例** |
 
@@ -531,7 +531,7 @@ docker exec -it local-redis redis-cli ping     # 期望 PONG
 
 ```bash
 mvn -q -DskipTests package          # 构建
-mvn test                            # 全量（基线 153）
+mvn test                            # 全量（基线 167）
 mvn test -Dtest=ContentIntegrationTest
 mvn test -Dtest=ContentIntegrationTest#方法名
 ```
