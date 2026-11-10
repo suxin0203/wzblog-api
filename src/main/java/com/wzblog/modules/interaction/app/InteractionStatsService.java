@@ -27,4 +27,16 @@ public class InteractionStatsService {
     public long countReactionsBetween(String type, LocalDateTime from, LocalDateTime to) {
         return statsMapper.countReactionsBetween(type, from, to);
     }
+
+    /** 后台待办角标：待审核评论数（v1.6.10，dashboard overview 消费）。 */
+    @Transactional(readOnly = true)
+    public long pendingCommentCount() {
+        return statsMapper.countPendingComments();
+    }
+
+    /** 后台待办角标：待审核留言数（v1.6.10）。 */
+    @Transactional(readOnly = true)
+    public long pendingGuestbookCount() {
+        return statsMapper.countPendingGuestbooks();
+    }
 }

@@ -17,6 +17,7 @@ import com.wzblog.modules.points.domain.PointsType;
 import com.wzblog.modules.points.domain.event.PointsAdjustedEvent;
 import com.wzblog.modules.points.infra.mapper.PointsAccountMapper;
 import com.wzblog.modules.points.infra.mapper.PointsLedgerMapper;
+import com.wzblog.modules.points.infra.mapper.PointsOrderMapper;
 import com.wzblog.modules.identity.app.UserQueryService;
 import com.wzblog.modules.points.infra.mapper.TitleMapper;
 import org.slf4j.Logger;
@@ -57,6 +58,7 @@ public class PointsQueryService {
     private final PointsAccountMapper accountMapper;
     private final PointsLedgerMapper ledgerMapper;
     private final TitleMapper titleMapper;
+    private final PointsOrderMapper orderMapper;
     private final com.wzblog.modules.identity.app.UserQueryService userQueryService;
     private final PointsAppService pointsAppService;
     private final AuditRecorder auditRecorder;
@@ -67,6 +69,7 @@ public class PointsQueryService {
     public PointsQueryService(PointsAccountMapper accountMapper,
                               PointsLedgerMapper ledgerMapper,
                               TitleMapper titleMapper,
+                              PointsOrderMapper orderMapper,
                               UserQueryService userQueryService,
                               PointsAppService pointsAppService,
                               AuditRecorder auditRecorder,
@@ -76,12 +79,19 @@ public class PointsQueryService {
         this.accountMapper = accountMapper;
         this.ledgerMapper = ledgerMapper;
         this.titleMapper = titleMapper;
+        this.orderMapper = orderMapper;
         this.userQueryService = userQueryService;
         this.pointsAppService = pointsAppService;
         this.auditRecorder = auditRecorder;
         this.eventPublisher = eventPublisher;
         this.redis = redis;
         this.objectMapper = objectMapper;
+    }
+
+    /** 后台待办角标：待审核（PENDING）订单数（v1.6.10，dashboard overview 消费）。 */
+    @Transactional(readOnly = true)
+    public long pendingOrderCount() {
+        return orderMapper.countAdminPage(null, "PENDING", null, null, null);
     }
 
     /** 账户快照：无行返回零值 VO，不落库（TC-M4-001）。 */

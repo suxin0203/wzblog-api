@@ -72,6 +72,10 @@ public class DashboardAppService {
         // v1.6.8：当日浏览实时口径（Redis 日计数只读求和；drain 仍归 03:10 聚合任务）
         var todayViews = articleStatsService.peekDailyViews(today);
         result.put("todayViews", todayViews.internal() + todayViews.external());
+        // v1.6.10：后台待办计数（侧栏角标与仪表盘待办卡共用同一响应，不再单独请求）
+        result.put("pendingComments", interactionStatsService.pendingCommentCount());
+        result.put("pendingGuestbooks", interactionStatsService.pendingGuestbookCount());
+        result.put("pendingOrders", pointsQueryService.pendingOrderCount());
         return result;
     }
 

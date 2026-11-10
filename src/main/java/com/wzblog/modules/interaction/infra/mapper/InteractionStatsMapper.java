@@ -34,4 +34,18 @@ public interface InteractionStatsMapper {
             """)
     long countRecentReactionsByArticle(@Param("articleId") Long articleId,
                                        @Param("since") LocalDateTime since);
+
+    /** 后台待办角标：待审核评论（R13 软删排除）。 */
+    @Select("""
+            SELECT COUNT(*) FROM comments
+            WHERE status = 'PENDING' AND deleted_at IS NULL
+            """)
+    long countPendingComments();
+
+    /** 后台待办角标：待审核留言。 */
+    @Select("""
+            SELECT COUNT(*) FROM guestbook_messages
+            WHERE status = 'PENDING' AND deleted_at IS NULL
+            """)
+    long countPendingGuestbooks();
 }

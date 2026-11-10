@@ -135,6 +135,10 @@ class AdminIntegrationTest extends IdentityTestSupport {
         // 今日注册至少含本次
         assertThat(overview.data().path("todayRegistered").asInt()).isGreaterThanOrEqualTo(1);
         assertThat(overview.data().path("totalUsers").asLong()).isGreaterThanOrEqualTo(1);
+        // v1.6.10：后台待办计数三字段（非负即可，具体值随测试造数浮动）
+        assertThat(overview.data().path("pendingComments").asLong()).isGreaterThanOrEqualTo(0);
+        assertThat(overview.data().path("pendingGuestbooks").asLong()).isGreaterThanOrEqualTo(0);
+        assertThat(overview.data().path("pendingOrders").asLong()).isGreaterThanOrEqualTo(0);
 
         HttpResult trend = get("/api/v1/admin/dashboard/user-trend?days=7", adminToken());
         assertThat(trend.status()).isEqualTo(200);
