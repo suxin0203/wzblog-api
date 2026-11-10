@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -163,6 +164,12 @@ public class AiChatOrchestrator {
             // 新 phase 隐含前一阶段收尾，done/error 隐含 composing 收尾
             send(emitter, "phase", Map.of("name", "understanding"));
             List<ChatClient.ChatMessage> context = buildContext(session.getId());
+            try {
+                // 负责人要求的节奏感：理解问题阶段至少驻留 1s（AI 低频场景，4 线程池可承载）
+                Thread.sleep(1000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
 
             // 阶段 2：查询数据（工具轮 complete/tool 事件都在此阶段内）
             send(emitter, "phase", Map.of("name", "searching"));
@@ -188,10 +195,17 @@ public class AiChatOrchestrator {
                             "brief", brief == null ? "正在检索站内数据" : brief,
                             "status", "start", "params", summarizeParams(call.argumentsJson())));
                     String result = toolRegistry.execute(call.name(), call.argumentsJson());
-                    int resultCount = countResults(result);
+                    Integer resultCount = countResults(call.name(), result);
                     collectHitArticles(call.name(), result, hitArticles, seenSlugs);
-                    send(emitter, "tool", Map.of("name", call.name(),
-                            "brief", "执行完成", "status", "end", "resultCount", resultCount));
+                    // tool end 帧按工具结构下发真实条数；overview 无条数概念不下发（前端显示「完成」）
+                    Map<String, Object> endPayload = new HashMap<>();
+                    endPayload.put("name", call.name());
+                    endPayload.put("brief", "执行完成");
+                    endPayload.put("status", "end");
+                    if (resultCount != null) {
+                        endPayload.put("resultCount", resultCount);
+                    }
+                    send(emitter, "tool", endPayload);
                     context.add(ChatClient.ChatMessage.tool(result, call.id()));
                     insertToolMessage(session.getId(), call, result);
                 }
@@ -380,15 +394,29 @@ public class AiChatOrchestrator {
         }
     }
 
-    private static int countResults(String toolResult) {
-        int index = toolResult.indexOf("\"total\":");
-        if (index < 0) {
-            return toolResult.contains("\"items\"") ? 1 : 0;
-        }
+    /**
+     * 工具结果条数计数（v1.6.10 修正：原实现只认 "total" 子串，overview/detail/hot 全 0、
+     * categories/tags 恒 1）。按各工具返回结构取真实条数；
+     * get_site_overview 无条数概念返回 null（tool end 帧不下发 resultCount，前端显示「完成」）。
+     */
+    private Integer countResults(String toolName, String toolResult) {
         try {
-            return Integer.parseInt(toolResult.substring(index + 8).split("[^0-9]")[0]);
+            JsonNode node = objectMapper.readTree(toolResult);
+            return switch (toolName) {
+                case "search_articles" -> {
+                    // search() 的结果包装为单元素数组 [{"total":N,"items":[...]}]
+                    if (node.isArray() && !node.isEmpty()) {
+                        node = node.get(0);
+                    }
+                    yield node.path("total").asInt(node.path("items").size());
+                }
+                case "list_categories", "list_tags" -> node.path("items").size();
+                case "get_hot_articles" -> node.isArray() ? node.size() : node.path("items").size();
+                case "get_article_detail" -> node.path("found").asBoolean(false) ? 1 : 0;
+                default -> null;
+            };
         } catch (Exception ex) {
-            return 0;
+            return null;
         }
     }
 

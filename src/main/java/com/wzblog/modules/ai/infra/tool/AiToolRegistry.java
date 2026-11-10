@@ -75,10 +75,11 @@ public class AiToolRegistry {
                     ? objectMapper.createObjectNode() : objectMapper.readTree(argumentsJson);
             var result = switch (name) {
                 case "search_articles" -> search(args);
-                case "list_categories" -> toJson(Map.of("items",
-                        articleQueryService.listCategories()));
-                case "list_tags" -> toJson(Map.of("items",
-                        articleQueryService.listTags(boundedInt(args, "limit", 20, 1, 50))));
+                // list_* 返回原始结构，由出口处统一 toJson（此前分支内先 toJson 一次，
+                // 出口再序列化字符串 → 双重转义成 TextNode，前端计数恒 0）
+                case "list_categories" -> Map.of("items", articleQueryService.listCategories());
+                case "list_tags" -> Map.of("items",
+                        articleQueryService.listTags(boundedInt(args, "limit", 20, 1, 50)));
                 case "get_hot_articles" -> articleQueryService.getHotPublic(
                         period(args), boundedInt(args, "limit", 5, 1, 10));
                 case "get_article_detail" -> detail(args.path("slug").asText(""));
