@@ -315,8 +315,9 @@ G9 视觉改动先探测 UI 技能：会话里若存在 UI / 设计 / 样式类�
 G10 视觉基线唯一来源 = src/assets/styles/variables.scss（设计系统 v2「纸面·青竹」）：
    颜色/字号/间距/圆角/阴影/动效一律用该文件里的 $xxx 变量（已由 vite additionalData 全局注入），
    组件内禁止写死色值、禁止自定义一套间距/圆角。
-G11 .taste-skill/direction.json 属历史技能产出（accent-ladder / 覆盆子 #b8336a / DM Sans），
-   与现行青竹绿基线 #099268 不一致 —— 只能当参考，禁止据此改主题或换配色。
+G11 历史技能产出 .taste-skill/direction.json（accent-ladder / 覆盆子 #b8336a / DM Sans）
+   已于 2026-11-12 清理移出（归档 backup/docs-archive-20261112.zip），其配色与现行青竹绿
+   基线 #099268 不一致 —— 禁止据此改主题或换配色。
 G12 视觉一致性验收：改完任选 3 个同类页面比对同一元素（按钮/表格/标签/卡片）是否同款；
    给出截图或 DOM 结构对比，不接受"看起来一致"。
 ```
