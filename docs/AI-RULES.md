@@ -682,8 +682,8 @@ git revert <commit>            # 回滚（禁止 reset 已推送提交）
 
 | 日期 | 对象 | 操作 | 原因 | 回滚 |
 |---|---|---|---|---|
-| 2026-10-31 | users id=1018（wx_ahhgbcidfcbj，WECHAT 自动账号）/ id=1001（debug_admin） | 1018 匿名化软删（username/openid→deleted_1018、unionid 清空），openid 移交 1001（条件更新 openid IS NULL，均 1 行） | 负责人要求：微信扫码登录绑定管理员账号，便于真机联调；自动账号弃用 | `backup/reverse-20261031-openid-to-debug_admin.sql`（原值备份 `backup/users-1001-1018-20261031-backup.sql`） |
-| 2026-11-11 | friend_links id 8901/8902/8903（更新）+ 8904-8906（新增，显式 id） | 示例假友链替换为真实技术站：阮一峰的网络日志 / 美团技术团队 / 掘金 / V2EX / InfoQ 中文站 / 开源中国（8903 停用态转启用）；本地库已执行，生产库待负责人执行同文件 | 负责人要求：友链是演示假数据，换成真实可访问的大厂/技术站 | `backup/reverse-friend-links-20261111.sql`（原值备份 `backup/friend-links-20261111-before.txt`） |
-| 2026-11-11 | site_configs id=3（site.announcement）/ id=8501（site.footer） | 调试期文案清理：公告「调试环境已启用，页面数据均为虚构。」→ 空串；页脚「本地调试环境」→ 正常页脚文案；本地库已执行，生产库待负责人执行同文件 | 负责人要求：第一版生产，清除测试标识（前端 grep 已确认无写死测试文案） | `backup/reverse-site-configs-20261111.sql`（原值见该文件注释） |
+| 2026-10-31 | users id=1018（wx_ahhgbcidfcbj，WECHAT 自动账号）/ id=1001（debug_admin） | 1018 匿名化软删（username/openid→deleted_1018、unionid 清空），openid 移交 1001（条件更新 openid IS NULL，均 1 行） | 负责人要求：微信扫码登录绑定管理员账号，便于真机联调；自动账号弃用 | `backup/data-fixes/reverse-20261031-openid-to-debug_admin.sql`（原值备份 `backup/data-fixes/users-1001-1018-20261031-backup.sql`） |
+| 2026-11-11 | friend_links id 8901/8902/8903（更新）+ 8904-8906（新增，显式 id） | 示例假友链替换为真实技术站：阮一峰的网络日志 / 美团技术团队 / 掘金 / V2EX / InfoQ 中文站 / 开源中国（8903 停用态转启用）；本地库已执行，生产库待负责人执行同文件 | 负责人要求：友链是演示假数据，换成真实可访问的大厂/技术站 | `backup/data-fixes/reverse-friend-links-20261111.sql`（原值备份 `backup/data-fixes/friend-links-20261111-before.txt`） |
+| 2026-11-11 | site_configs id=3（site.announcement）/ id=8501（site.footer） | 调试期文案清理：公告「调试环境已启用，页面数据均为虚构。」→ 空串；页脚「本地调试环境」→ 正常页脚文案；本地库已执行，生产库待负责人执行同文件 | 负责人要求：第一版生产，清除测试标识（前端 grep 已确认无写死测试文案） | `backup/data-fixes/reverse-site-configs-20261111.sql`（原值见该文件注释） |
 
 > 规则只增不改语义。要推翻旧规则，必须在 `docs/decisions.md` 留一条决策记录，说明原因。
