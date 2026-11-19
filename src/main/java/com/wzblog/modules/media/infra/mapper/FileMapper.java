@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -30,6 +31,20 @@ public interface FileMapper extends BaseMapper<FileEntry> {
 
     @Select("SELECT " + COLUMNS + " FROM files WHERE object_key = #{objectKey} LIMIT 1")
     FileEntry selectByObjectKey(@Param("objectKey") String objectKey);
+
+    /** 缩略图派生对象无独立 files 行，media 服务路由按 thumb_key 反查父文件。 */
+    @Select("SELECT " + COLUMNS + " FROM files WHERE thumb_key = #{thumbKey} LIMIT 1")
+    FileEntry selectByThumbKey(@Param("thumbKey") String thumbKey);
+
+    /** 列表封面展示接线：按 object_key 批量取缩略图 key；仅 ACTIVE 且已生成（thumb_key 非空）。 */
+    @Select("""
+            <script>
+            SELECT object_key, thumb_key FROM files
+            WHERE status = 'ACTIVE' AND thumb_key IS NOT NULL AND object_key IN
+            <foreach collection="objectKeys" item="objectKey" open="(" separator="," close=")">#{objectKey}</foreach>
+            </script>
+            """)
+    List<FileThumbRow> selectThumbKeysByObjectKeys(@Param("objectKeys") Collection<String> objectKeys);
 
     /** 去重查询：同 uploader 下同 sha256 + size 的可用文件（ACTIVE/ORPHAN）。
      *  限定上传者：跨用户字节相同各自成行，避免 ensureOwnerAndBiz 把合法上传误判为"复用他人文件"。 */

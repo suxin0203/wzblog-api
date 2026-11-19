@@ -17,6 +17,7 @@ import com.wzblog.modules.content.infra.mapper.ArticleTagMapper;
 import com.wzblog.modules.content.infra.mapper.ArticleTagRow;
 import com.wzblog.modules.content.infra.mapper.CategoryMapper;
 import com.wzblog.modules.identity.app.UserQueryService;
+import com.wzblog.modules.media.app.FileAppService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -39,15 +40,18 @@ public class ArticleAssembler {
     private final UserQueryService userQueryService;
     private final CategoryMapper categoryMapper;
     private final ArticleTagMapper articleTagMapper;
+    private final FileAppService fileAppService;
     private final ObjectMapper objectMapper;
 
     public ArticleAssembler(UserQueryService userQueryService,
                             CategoryMapper categoryMapper,
                             ArticleTagMapper articleTagMapper,
+                            FileAppService fileAppService,
                             ObjectMapper objectMapper) {
         this.userQueryService = userQueryService;
         this.categoryMapper = categoryMapper;
         this.articleTagMapper = articleTagMapper;
+        this.fileAppService = fileAppService;
         this.objectMapper = objectMapper;
     }
 
@@ -115,12 +119,16 @@ public class ArticleAssembler {
         Set<Long> authorIds = new LinkedHashSet<>();
         Set<Long> categoryIds = new LinkedHashSet<>();
         List<Long> articleIds = new ArrayList<>(articles.size());
+        Set<String> coverKeys = new LinkedHashSet<>();
         for (Article article : articles) {
             if (article.getAuthorId() != null) {
                 authorIds.add(article.getAuthorId());
             }
             if (article.getCategoryId() != null) {
                 categoryIds.add(article.getCategoryId());
+            }
+            if (article.getCoverKey() != null && !article.getCoverKey().isBlank()) {
+                coverKeys.add(article.getCoverKey());
             }
             articleIds.add(article.getId());
         }
@@ -137,12 +145,16 @@ public class ArticleAssembler {
                 tags.computeIfAbsent(row.getArticleId(), key -> new ArrayList<>()).add(row);
             }
         }
-        return new Context(authors, categories, tags);
+        Map<String, String> coverThumbs = fileAppService.thumbKeysByObjectKeys(coverKeys);
+        return new Context(authors, categories, tags, coverThumbs);
     }
 
     private ArticleListItemVO listItem(Article article, Context context) {
+        String coverKey = article.getCoverKey();
+        String coverThumbKey = coverKey == null || coverKey.isBlank()
+                ? null : context.coverThumbs().get(coverKey);
         return new ArticleListItemVO(
-                article.getId(), article.getTitle(), article.getSlug(), article.getSummary(), article.getCoverKey(),
+                article.getId(), article.getTitle(), article.getSlug(), article.getSummary(), coverKey, coverThumbKey,
                 category(article, context), tags(article, context), author(article, context),
                 nz(article.getViewCount()), nz(article.getLikeCount()),
                 nz(article.getFavoriteCount()), nz(article.getCommentCount()),
@@ -172,7 +184,8 @@ public class ArticleAssembler {
 
     private AuthorVO author(Article article, Context context) {
         UserBrief brief = context.authors().get(article.getAuthorId());
-        return brief == null ? null : new AuthorVO(brief.id(), brief.nickname(), brief.avatarKey());
+        return brief == null ? null
+                : new AuthorVO(brief.id(), brief.nickname(), brief.avatarKey(), brief.activeTitle());
     }
 
     private int nz(Integer value) {
@@ -181,6 +194,7 @@ public class ArticleAssembler {
 
     private record Context(Map<Long, UserBrief> authors,
                            Map<Long, Category> categories,
-                           Map<Long, List<ArticleTagRow>> tags) {
+                           Map<Long, List<ArticleTagRow>> tags,
+                           Map<String, String> coverThumbs) {
     }
 }

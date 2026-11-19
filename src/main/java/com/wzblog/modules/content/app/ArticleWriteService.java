@@ -39,6 +39,22 @@ import java.util.Set;
 
 /**
  * 文章写入：Markdown 流水线、slug、修订、文件引用差量、状态机与事件（M2 §7/§10）。
+ *
+ * <p>【教学：一个"教科书级"的应用服务长什么样】（详解见 docs/学习文档/04 与 08）</p>
+ * <ul>
+ *   <li><b>事务边界在 app 层方法上</b>（@Transactional）：一个用例 = 一个原子动作，
+ *       方法正常返回提交、抛异常整体回滚 —— Controller 不管事务，Mapper 各自单条执行；</li>
+ *   <li><b>11 个依赖的构造器注入</b>：应用服务是"编排者"，聚合 Mapper/流水线/端口/
+ *       事件发布器/审计 —— 依赖多不是罪，藏着掖着才是；</li>
+ *   <li><b>唯一事实源 + 派生</b>：客户端只传 content_md，html/纯文本/目录/字数全部
+ *       服务端计算（绝不信任客户端提交的渲染结果）；</li>
+ *   <li><b>唯一键兜底并发</b>："先查 slug 后插入"存在并发窗口，catch
+ *       DuplicateKeyException 翻译成业务错误 —— 数据库唯一键才是最后防线；</li>
+ *   <li><b>文件引用差量同步</b>：只 claim 新增图片、只 release 移除的图片，
+ *       防止并发窗口里计数短暂归零导致误删（假设任何两行代码之间都可能有别的线程）；</li>
+ *   <li><b>状态迁移用条件 UPDATE</b>：publish 等动作的 SQL 带 WHERE status=...，
+ *       影响行数 0 = 并发/状态冲突 → 业务错误码（见 ArticleMapper）。</li>
+ * </ul>
  */
 @Service
 public class ArticleWriteService {
@@ -82,6 +98,13 @@ public class ArticleWriteService {
         this.auditRecorder = auditRecorder;
     }
 
+    /**
+     * 创建文章（草稿）。完整步骤：
+     * ① 领域校验（Markdown 大小上限）→ ② 渲染管线（消毒/目录/字数/图片提取）
+     * → ③ 关联校验（分类/标签存在）→ ④ slug 生成或查重 → ⑤ 组装实体（DRAFT, version=0）
+     * → ⑥ 入库（唯一键兜底并发撞 slug）→ ⑦ 标签关联 + 初始修订 → ⑧ 图片引用登记
+     * → ⑨ 返回出参 VO（ID 字符串化防 JS 精度丢失）。
+     */
     @Transactional
     public ArticleCreatedVO create(CurrentUser currentUser, ArticleCreateRequest request) {
         String title = request.title().trim();
@@ -257,7 +280,7 @@ public class ArticleWriteService {
             auditRecorder.record(currentUser, "ARTICLE_DELETE", "ARTICLE", String.valueOf(id),
                     "{\"deleted\":false}", "{\"deleted\":true}");
             eventPublisher.publishEvent(new ArticleModeratedEvent(id, article.getAuthorId(),
-                    currentUser.id(), "SOFT_DELETE", null, article.getVersion() + 1));
+                    currentUser.id(), "SOFT_DELETE", null, article.getVersion() + 1, article.getTitle()));
         }
     }
 
@@ -275,7 +298,7 @@ public class ArticleWriteService {
         auditRecorder.record(admin, "ARTICLE_RESTORE", "ARTICLE", String.valueOf(id),
                 "{\"deleted\":true}", "{\"deleted\":false}");
         eventPublisher.publishEvent(new ArticleModeratedEvent(id, article.getAuthorId(),
-                admin.id(), "RESTORE", null, article.getVersion() + 1));
+                admin.id(), "RESTORE", null, article.getVersion() + 1, article.getTitle()));
     }
 
     /** purge 是终态：释放图片引用、反转发布积分、审计并通知作者。 */
@@ -290,13 +313,20 @@ public class ArticleWriteService {
             throw new BusinessException(ErrorCode.ARTICLE_PURGE_NOT_ALLOWED);
         }
         Set<String> images = referencedImages(article.getContentMd(), article.getCoverKey());
+        // 显式先删子表再删主行：InnoDB 对「CASCADE 删子行 + comments 自引用(parent_id/root_id) SET NULL」
+        // 的组合会抛 1452，含楼中楼回复的文章必现（回归用例 purgeArticleWithNestedCommentsSucceeds）
+        articleMapper.purgeComments(id);
+        articleMapper.purgeArticleTags(id);
+        articleMapper.purgeRevisions(id);
+        articleMapper.purgeReactions(id);
+        articleMapper.purgeDailyStats(id);
         articleMapper.purge(id);
         releaseImages(images, Set.of());
         eventPublisher.publishEvent(new ArticleDeletedEvent(article.getId(), article.getAuthorId()));
         auditRecorder.record(admin, "ARTICLE_PURGE", "ARTICLE", String.valueOf(id),
                 "{\"deleted\":true}", "{\"purged\":true}");
         eventPublisher.publishEvent(new ArticleModeratedEvent(id, article.getAuthorId(),
-                admin.id(), "PURGE", null, article.getVersion()));
+                admin.id(), "PURGE", null, article.getVersion(), article.getTitle()));
     }
 
     /** 接管（D2）：ADMIN 成为作者后才能改他人正文；审计 + 通知原作者。 */
@@ -320,7 +350,7 @@ public class ArticleWriteService {
                 "{\"authorId\":" + oldAuthorId + "}",
                 "{\"authorId\":" + admin.id() + ",\"reason\":\"" + escapeJson(normalizedReason) + "\"}");
         eventPublisher.publishEvent(new ArticleModeratedEvent(id, oldAuthorId, admin.id(),
-                "TAKEOVER", normalizedReason, refreshed.getVersion()));
+                "TAKEOVER", normalizedReason, refreshed.getVersion(), refreshed.getTitle()));
         return articleAssembler.toEdit(refreshed);
     }
 

@@ -12,6 +12,7 @@ import com.wzblog.common.security.Role;
 import com.wzblog.common.util.Ids;
 import com.wzblog.common.util.Times;
 import com.wzblog.common.web.CurrentUser;
+import com.wzblog.common.security.Role;
 import com.wzblog.modules.content.api.vo.ArchiveItemVO;
 import com.wzblog.modules.content.api.vo.ArticleDetailVO;
 import com.wzblog.modules.content.api.vo.ArticleEditVO;
@@ -168,7 +169,13 @@ public class ArticleReadService {
     }
 
     public ArticleDetailVO detail(String slug, CurrentUser currentUser) {
+        // selectBySlug 不做软删过滤（软删拦截在 assertVisible）；ADMIN 读取软删行用于回收站预览
         Article article = articleMapper.selectBySlug(slug);
+        if (article != null && article.isDeleted()
+                && currentUser != null && currentUser.role() == Role.ADMIN) {
+            // 回收站预览：ADMIN 可读软删文章详情；软删态是过渡态，不进缓存避免污染正常路径
+            return articleAssembler.toDetail(article);
+        }
         assertVisible(article, currentUser);
         ArticleDetailVO cached = readCache(article);
         if (cached != null) {
@@ -219,7 +226,7 @@ public class ArticleReadService {
         for (ArticleRevision revision : revisions) {
             UserBrief editor = editors.get(revision.getEditorId());
             result.add(new RevisionVO(revision.getRevisionNo(),
-                    editor == null ? null : new AuthorVO(editor.id(), editor.nickname(), editor.avatarKey()),
+                    editor == null ? null : new AuthorVO(editor.id(), editor.nickname(), editor.avatarKey(), editor.activeTitle()),
                     revision.getTitle(), revision.getSummary(), revision.getChangeNote(),
                     Times.toInstant(revision.getCreatedAt())));
         }

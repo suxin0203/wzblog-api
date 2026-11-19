@@ -1,130 +1,149 @@
+# =============================================================================
+# 文栈博客后端 主配置文件（教学详解见 docs/学习文档/11）
+# -----------------------------------------------------------------------------
+# 配置哲学：
+#   1. 本文件只写"安全的默认值"；一切敏感/环境相关的用 ${VAR} 占位符指向环境变量；
+#   2. 有默认值（${VAR:默认}）→ 本地开箱即用；无默认值（${VAR}）→ 必须显式提供，
+#      缺失即启动失败（fail-fast，宁死不带病运行）；
+#   3. 本地开发差异走 application-local.yml（profile 增量覆盖）；
+#   4. .env 文件由 spring.config.import 导入，存放每台机器不同的密钥（不进 git）。
+# =============================================================================
+
 server:
-  port: ${SERVER_PORT:8021}
-  shutdown: graceful
+  port: ${SERVER_PORT:8021}          # 后端监听端口；线上 nginx 把 /api/v1 分发到这里
+  shutdown: graceful                 # 优雅停机：收到 SIGTERM 后不再接新请求、处理完在途请求再退出
   tomcat:
     # 拒绝超大 multipart 时仍读完整请求体再回错误（默认 2MB 会直接掐连接，客户端拿不到 4xx JSON）
-    max-swallow-size: 8MB
+    max-swallow-size: 8MB            # 每个"怪配置"背后都是一次踩坑——这条来自真实事故
 
 spring:
   application:
-    name: wzblog
+    name: wzblog                     # 应用名（日志/监控里的标识）
   config:
-    import: optional:file:./.env[.properties]
+    import: optional:file:./.env[.properties]   # 把工作目录的 .env 当 properties 导入；optional=不存在不报错
   lifecycle:
-    timeout-per-shutdown-phase: 20s
+    timeout-per-shutdown-phase: 20s  # 优雅停机给在途请求的收尾时限（与 graceful 配套）
   datasource:
+    # MySQL 连接串：强制三重 UTC（serverTimezone/connectionTimeZone/forceConnectionTimeZoneToSession）
+    # —— 全链路 UTC 口径的数据库侧锚点，业务日（如"每日签到"）由代码按 Asia/Shanghai 单独折算
     url: "jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:wzblog}?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&useSSL=false&allowPublicKeyRetrieval=true"
-    username: ${DB_USER}
+    username: ${DB_USER}             # 无默认值：缺失即启动失败（密码类配置的标准做法）
     password: ${DB_PASSWORD}
-    hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
-      connection-timeout: 3000
+    hikari:                          # HikariCP 连接池：数据库的"候客大厅"，连接是昂贵资源必须池化复用
+      maximum-pool-size: 20          # 上限：太大压垮 DB，太小请求排队超时
+      minimum-idle: 5                # 空闲保底：突发流量到来前备好热连接
+      connection-timeout: 3000       # 拿不到连接 3 秒即报错：快速失败优于无限排队
       validation-timeout: 3000
   data:
-    redis:
+    redis:                           # Redis 只放"丢了能重建"的瞬时状态（限流/锁/黑名单/缓存）
       host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:6379}
-      database: ${REDIS_DATABASE:1}
+      database: ${REDIS_DATABASE:1}  # 逻辑库编号：与同机其他项目隔离
       password: ${REDIS_PASSWORD:}
       timeout: 2s
-  flyway:
+  flyway:                            # 数据库结构版本管理：启动时自动执行 db/migration 下未跑过的脚本
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: false
-  jackson:
+  jackson:                           # JSON 序列化全局口径：时间输出 ISO-8601 UTC（不是时间戳数字）
     time-zone: UTC
     serialization:
       write-dates-as-timestamps: false
   mvc:
-    throw-exception-if-no-handler-found: true
+    throw-exception-if-no-handler-found: true   # 未知路径抛异常（配合全局处理器出 404 JSON）
   servlet:
     multipart:
       # 与 wzblog.file.max-size-bytes(5MB) 对齐；Boot 默认 1MB 会把 1~5MB 上传打成 500
-      max-file-size: 5MB
-      max-request-size: 6MB
+      max-file-size: 5MB             # 单文件上限（业务限 5MB 图片）
+      max-request-size: 6MB          # 整个请求上限（略大于单文件，留出表单余量）
   web:
     resources:
       add-mappings: true
-#  main:
-#    banner-mode: off
   task:
     scheduling:
       pool:
-        size: 2
+        size: 2                      # @Scheduled 定时任务线程池（文件清理/积分对账/日统计/AI兜底）
 
 mybatis-plus:
   configuration:
-    map-underscore-to-camel-case: true
-    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
-    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+    map-underscore-to-camel-case: true    # 列 user_name ↔ 字段 userName 自动互转
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler  # 配合 @EnumValue 存枚举名
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl   # SQL 日志走 SLF4J（local profile 换 StdOut 直打印）
   global-config:
     banner: false
     db-config:
-      id-type: auto
+      id-type: auto                       # 全局主键策略：数据库自增（例外见 ai_sessions 的 ULID）
 
-management:
+management:                            # Actuator 运维端点：只暴露这四个（默认全裸奔是事故）
   endpoints:
     web:
       exposure:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: when_authorized
+      show-details: when_authorized    # 健康细节要授权才看（防连接信息泄漏给匿名访客）
 
-springdoc:
+springdoc:                             # OpenAPI/Swagger 文档：前后端联调神器
   api-docs:
     path: /v3/api-docs
   swagger-ui:
-    path: /swagger-ui.html
+    path: /swagger-ui.html             # 打开即见全部接口的参数与返回结构
 
 logging:
   level:
     root: INFO
     com.wzblog: INFO
   pattern:
+    # 日志格式内嵌 [%X{traceId:-}]：从 MDC 取当前请求的 traceId —— 与 TraceIdFilter 联动，
+    # 每行日志自动带追踪号，报障时 grep traceId 即可还原一次请求的全链路日志
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{40} - %msg%n"
 
+# =============================================================================
+# 以下 wzblog.* 是本项目自定义命名空间（与框架的 spring.* 划清地盘）
+# 各段配置由对应模块 infra/config 下的 XxxProperties(@ConfigurationProperties) 类型安全绑定
+# =============================================================================
+
 wzblog:
-  file:
-    storage: ${FILE_STORAGE:local}
+  file:                              # 媒体模块（FileStorageProperties）
+    storage: ${FILE_STORAGE:local}   # 存储后端：local=本地磁盘（MinIO 预留）
     root: ${FILE_STORAGE_ROOT:./data/uploads}
-    public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}
+    thumb-longest: ${FILE_THUMB_LONGEST:320}          # 缩略图最长边像素
+    public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}   # 媒体公开访问基地址
     upload-base-url: ${FILE_UPLOAD_BASE_URL:http://localhost:8021}
-    url-secret: ${WZBLOG_FILE_URL_SECRET:${JWT_SECRET}}
-  auth:
-    jwt-secret: ${JWT_SECRET}
-    issuer: wzblog
-    audience: wzblog-web
-    access-ttl: 15m
-    refresh-ttl: 14d
-    refresh-grace: 10s
-    captcha-enabled: ${WZBLOG_CAPTCHA_ENABLED:true}
-    captcha-ttl: 5m
-    captcha-max-fails: 3
-    login-max-failures: 5
-    login-lock-ttl: 15m
-    login-ip-limit-per-minute: 30
-    reset-token-ttl: 5m
-    code-pepper: ${WZBLOG_CODE_PEPPER}
-    log-verification-code: ${WZBLOG_LOG_VERIFICATION_CODE:false}
-    verification-max-attempts: 3
-    register-ip-limit-per-hour: 10
-    forgot-email-limit-per-hour: 5
-    forgot-ip-limit-per-hour: 10
+    url-secret: ${WZBLOG_FILE_URL_SECRET:${JWT_SECRET}}   # 预签名 URL 的 HMAC 密钥（缺省复用 JWT 密钥）
+  auth:                              # 认证模块（AuthProperties）—— 第 07 章防爆破参数的可调化
+    jwt-secret: ${JWT_SECRET}        # 必填：HS256 签名密钥（≥32 字节，构造器 fail-fast 校验）
+    issuer: wzblog                   # iss：令牌签发者
+    audience: wzblog-web             # aud：令牌受众（前端）
+    access-ttl: 15m                  # access token 有效期：短→被盗损失小
+    refresh-ttl: 14d                 # refresh token 有效期：长→免频繁登录
+    refresh-grace: 10s               # 刷新宽限：多标签页并发刷新时旧令牌短暂可用（防误判攻击踢线）
+    captcha-enabled: ${WZBLOG_CAPTCHA_ENABLED:true}   # 图形验证码开关（测试关）
+    captcha-ttl: 5m                  # 验证码有效期
+    captcha-max-fails: 3             # 验证码错 3 次作废重取
+    login-max-failures: 5            # 连续登录失败 5 次 → 锁号
+    login-lock-ttl: 15m              # 锁号时长
+    login-ip-limit-per-minute: 30    # 单 IP 每分钟登录尝试上限（防爆破第一道闸）
+    reset-token-ttl: 5m              # 找回密码一次性凭证有效期
+    code-pepper: ${WZBLOG_CODE_PEPPER}   # 验证码哈希佐料盐：库被拖也离线穷举不出 6 位码（分层防御）
+    log-verification-code: ${WZBLOG_LOG_VERIFICATION_CODE:false}   # 本地调试：验证码打进日志省得收邮件
+    verification-max-attempts: 3     # 验证码尝试上限
+    register-ip-limit-per-hour: 10   # 注册接口 IP 限流
+    forgot-email-limit-per-hour: 5   # 找回密码按邮箱限流（防邮件炸弹）
+    forgot-ip-limit-per-hour: 10     # 找回密码按 IP 限流
     avatar-public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8021/media}
-  wechat:
-    app-id: ${WECHAT_APP_ID:${WX_MINIAPP_APPID:}}
+  wechat:                            # 微信模块（WechatProperties）
+    app-id: ${WECHAT_APP_ID:${WX_MINIAPP_APPID:}}      # 兼容两代环境变量名
     app-secret: ${WECHAT_APP_SECRET:${WX_MINIAPP_SECRET:}}
     # mock=本地/测试确定性上游；real=凭据齐备后走真实微信（provider 由 env 覆盖）
-    provider: ${WECHAT_PROVIDER:auto}
-  ai:
+    provider: ${WECHAT_PROVIDER:auto}   # auto=凭据齐走 real、缺走 mock；配 real 却缺凭据会 503（防静默降级）
+  ai:                                # AI 模块（AiProperties）—— OpenAI 兼容协议，换厂商只改配置
     enabled: ${AI_ENABLED:true}
-    provider: ${AI_PROVIDER:mock}
-    base-url: ${AI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+    provider: ${AI_PROVIDER:mock}    # mock=确定性假实现（CI 可复现）；openai=真实 HTTP 调用
+    base-url: ${AI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}   # 默认智谱开放平台
     api-key: ${ZHIPU_API_KEY:}
     model: ${AI_MODEL:glm-4-flash-250414}
-  admin:
-    username: ${WZBLOG_ADMIN_USERNAME:}
+  admin:                             # 首个管理员引导（AdminProperties + AdminBootstrap 启动时创建）
+    username: ${WZBLOG_ADMIN_USERNAME:}   # 密码哈希绝不落种子脚本/版本库，启动时现场 BCrypt
     password: ${WZBLOG_ADMIN_PASSWORD:}
     email: ${WZBLOG_ADMIN_EMAIL:}

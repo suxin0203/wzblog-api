@@ -3,6 +3,7 @@ package com.wzblog.modules.points.app;
 import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.util.Times;
+import java.util.Map;
 import com.wzblog.modules.points.domain.LedgerEntry;
 import com.wzblog.modules.points.domain.PointsAccount;
 import com.wzblog.modules.points.domain.PointsType;
@@ -144,6 +145,22 @@ public class PointsAppService {
         return new PointsResult(entry.getId(), -amount, newBalance, false);
     }
 
+    /** 积分流水 remark 用的类型中文标签（与前端 orderMeta 映射同口径；新枚举登记时两处同步）。 */
+    private static final Map<PointsType, String> TYPE_LABELS = Map.of(
+            PointsType.DAILY_LOGIN, "每日登录",
+            PointsType.ARTICLE_PUBLISH, "发布文章",
+            PointsType.COMMENT_APPROVED, "评论通过",
+            PointsType.LIKE_RECEIVED, "收到点赞",
+            PointsType.LIKE_REVERSED, "点赞撤回",
+            PointsType.ARTICLE_PUBLISH_REVERSAL, "发布文章撤回",
+            PointsType.COMMENT_APPROVED_REVERSAL, "评论撤回",
+            PointsType.REDEEM, "积分兑换",
+            PointsType.REFUND, "兑换退款");
+
+    private static String typeLabel(PointsType type) {
+        return TYPE_LABELS.getOrDefault(type, type.name());
+    }
+
     /** 反转：按该业务已发放合计收敛，返回 null 表示无可反转。 */
     @Transactional
     public PointsResult reverse(Long userId, PointsType reverseType, PointsType positiveType,
@@ -154,7 +171,7 @@ public class PointsAppService {
             return PointsResult.empty(); // 未发放过，跳过
         }
         return post(userId, reverseType, -(int) grantedTotal, bizType, bizId, idempotencyKey,
-                positiveType.name() + " 反转", null);
+                typeLabel(positiveType) + "撤回", null);
     }
 
     /**

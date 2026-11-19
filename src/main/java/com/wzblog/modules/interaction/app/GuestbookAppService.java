@@ -186,7 +186,7 @@ public class GuestbookAppService {
         boolean mine = viewer != null && Objects.equals(message.getUserId(), viewer.id());
         AuthorVO author = message.getUserId() == null
                 ? AuthorVO.guest(message.getNickname())
-                : new AuthorVO(message.getUserId(), message.getNickname(), null, false);
+                : new AuthorVO(message.getUserId(), message.getNickname(), null, false, null);
         return new GuestbookVO(String.valueOf(message.getId()), author, message.getContent(),
                 Times.toInstant(message.getCreatedAt()), mine);
     }

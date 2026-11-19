@@ -274,7 +274,8 @@ class ContentIntegrationTest extends IdentityTestSupport {
         String editorName = unique("take");
         register(editorName, PASSWORD, null);
         String editor = promoteToEditor(editorName);
-        HttpResult created = createArticle(editor, articleBody(unique("take"), "# One"));
+        String originalTitle = unique("take");
+        HttpResult created = createArticle(editor, articleBody(originalTitle, "# One"));
         long id = created.data().path("id").asLong();
         long editorId = userId(editorName);
 
@@ -291,6 +292,11 @@ class ContentIntegrationTest extends IdentityTestSupport {
                 .isEqualTo(userId("bootstrap_admin"));
         assertThat(auditCount("ARTICLE_TAKEOVER", String.valueOf(id))).isEqualTo(1L);
         awaitNotification(editorId, "SYSTEM", 1);
+        // 治理通知正文必须携带文章标题（作者才知道被治理的是哪一篇）
+        String notifiedContent = jdbc.queryForObject(
+                "SELECT content FROM notifications WHERE recipient_id = ? AND type = 'SYSTEM' "
+                        + "ORDER BY id DESC LIMIT 1", String.class, editorId);
+        assertThat(notifiedContent).as("治理通知应包含文章标题").contains(originalTitle);
 
         // 接管后站主成为作者，可以挂自己上传的封面
         String cover = insertFile(userId("bootstrap_admin"), "ARTICLE_COVER");
@@ -326,6 +332,48 @@ class ContentIntegrationTest extends IdentityTestSupport {
         assertThat(refCount(foreignKey)).isZero();
     }
 
+    /** 列表封面缩略图接线：files 有 thumb_key → coverThumbKey 返回；未生成 → null（前端回退原图）。 */
+    @Test
+    void listItemsCarryCoverThumbKeyWithOriginalFallback() {
+        String editorName = unique("thumb");
+        register(editorName, PASSWORD, null);
+        String editor = promoteToEditor(editorName);
+
+        String coverWithThumb = insertFile(userId(editorName), "ARTICLE_COVER");
+        jdbc.update("UPDATE files SET thumb_key = ? WHERE object_key = ?",
+                coverWithThumb + "_thumb.jpg", coverWithThumb);
+        HttpResult withThumb = createArticle(editor, articleBody(unique("thumba"), "# A",
+                Map.of("version", 0, "coverKey", coverWithThumb)));
+        long withThumbId = withThumb.data().path("id").asLong();
+        publish(String.valueOf(withThumbId), editor);
+
+        String coverNoThumb = insertFile(userId(editorName), "ARTICLE_COVER");
+        HttpResult noThumb = createArticle(editor, articleBody(unique("thumbb"), "# B",
+                Map.of("version", 0, "coverKey", coverNoThumb)));
+        long noThumbId = noThumb.data().path("id").asLong();
+        publish(String.valueOf(noThumbId), editor);
+
+        HttpResult feed = get("/api/v1/articles?size=10", null);
+        assertThat(feed.status()).isEqualTo(200);
+        JsonNode list = feed.data().path("list");
+        assertThat(list.isArray()).isTrue();
+        JsonNode withThumbNode = findArticleNode(list, withThumbId);
+        assertThat(withThumbNode.path("coverKey").asText()).isEqualTo(coverWithThumb);
+        assertThat(withThumbNode.path("coverThumbKey").asText()).isEqualTo(coverWithThumb + "_thumb.jpg");
+        JsonNode noThumbNode = findArticleNode(list, noThumbId);
+        assertThat(noThumbNode.path("coverThumbKey").isNull()).isTrue();
+        assertThat(noThumbNode.path("coverKey").asText()).isEqualTo(coverNoThumb);
+    }
+
+    private JsonNode findArticleNode(JsonNode list, long id) {
+        for (JsonNode node : list) {
+            if (node.path("id").asLong() == id) {
+                return node;
+            }
+        }
+        throw new AssertionError("article not in feed: " + id);
+    }
+
     /** D13：软删可逆——不释放图片、不反转积分；purge 才是终态。 */
     @Test
     void softDeleteKeepsImageRefsUntilPurge() throws Exception {
@@ -354,6 +402,76 @@ class ContentIntegrationTest extends IdentityTestSupport {
         assertThat(delete("/api/v1/admin/articles/" + id + "/purge", admin).status()).isEqualTo(200);
         assertThat(refCount(image)).as("purge 才释放引用").isZero();
         assertThat(auditCount("ARTICLE_PURGE", String.valueOf(id))).isEqualTo(1L);
+    }
+
+    /** 回归：楼中楼回复（comments 自引用 parent_id/root_id）+ 文章级联删除曾触发 InnoDB 1452，
+     *  回收站含回复的文章必现 500——修复为显式分步删除（先子后主），本用例锁行为。 */
+    @Test
+    void purgeArticleWithNestedCommentsSucceeds() {
+        String admin = adminToken();
+        HttpResult created = createArticle(admin, articleBody(unique("nest"), "# Nested"));
+        long id = created.data().path("id").asLong();
+        publish(String.valueOf(id), admin);
+
+        // 直接构造评论自引用链（评论接口有限流 userCommentShortLimit=1/10s，jdbc 插入不受限流影响）
+        jdbc.update("""
+                INSERT INTO comments (article_id, user_id, root_id, parent_id, content, status)
+                VALUES (?, ?, NULL, NULL, '根评论', 'APPROVED')
+                """, id, userId("bootstrap_admin"));
+        Long rootId = jdbc.queryForObject(
+                "SELECT id FROM comments WHERE article_id = ? AND parent_id IS NULL LIMIT 1", Long.class, id);
+        jdbc.update("""
+                INSERT INTO comments (article_id, user_id, root_id, parent_id, content, status)
+                VALUES (?, ?, ?, ?, '回复一', 'APPROVED')
+                """, id, userId("bootstrap_admin"), rootId, rootId);
+        jdbc.update("""
+                INSERT INTO comments (article_id, user_id, root_id, parent_id, content, status)
+                VALUES (?, ?, ?, ?, '回复二', 'APPROVED')
+                """, id, userId("bootstrap_admin"), rootId, rootId);
+
+        assertThat(delete("/api/v1/articles/" + id, admin).status()).isEqualTo(200);
+        assertThat(delete("/api/v1/admin/articles/" + id + "/purge", admin).status())
+                .as("含回复链的回收站文章必须可彻底删除")
+                .isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM articles WHERE id = ?", Long.class, id)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM comments WHERE article_id = ?", Long.class, id)).isZero();
+    }
+
+    /** 回归：回收站预览——ADMIN 可读软删文章详情（新标签页预览的数据面）；匿名行为不变仍 404。 */
+    @Test
+    void adminCanPreviewDeletedArticleDetail() {
+        String admin = adminToken();
+        HttpResult created = createArticle(admin, articleBody(unique("prev"), "# Preview"));
+        long id = created.data().path("id").asLong();
+        publish(String.valueOf(id), admin);
+        String slug = created.data().path("slug").asText();
+
+        assertThat(delete("/api/v1/articles/" + id, admin).status()).isEqualTo(200);
+        assertThat(get("/api/v1/articles/" + slug, null).status())
+                .as("匿名访问软删文章仍应 404")
+                .isEqualTo(404);
+        HttpResult preview = get("/api/v1/articles/" + slug, admin);
+        assertThat(preview.status()).as("ADMIN 预览软删文章").isEqualTo(200);
+        assertThat(preview.data().path("id").asLong()).isEqualTo(id);
+    }
+
+    /** 称号徽标数据面：佩戴称号的作者，列表 author.activeTitle 返回称号名（未佩戴为 null 缺省）。 */
+    @Test
+    void feedAuthorCarriesActiveTitle() {
+        String admin = adminToken();
+        String titleName = unique("称号");
+        jdbc.update("INSERT INTO titles (name, description) VALUES (?, '回归测试称号')", titleName);
+        Long titleId = jdbc.queryForObject("SELECT id FROM titles WHERE name = ?", Long.class, titleName);
+        jdbc.update("UPDATE users SET active_title_id = ? WHERE username = 'bootstrap_admin'", titleId);
+
+        HttpResult created = createArticle(admin, articleBody(unique("titled"), "# T"));
+        long id = created.data().path("id").asLong();
+        publish(String.valueOf(id), admin);
+
+        HttpResult feed = get("/api/v1/articles?size=10", null);
+        assertThat(feed.status()).isEqualTo(200);
+        JsonNode node = findArticleNode(feed.data().path("list"), id);
+        assertThat(node.path("author").path("activeTitle").asText()).isEqualTo(titleName);
     }
 
     @Test

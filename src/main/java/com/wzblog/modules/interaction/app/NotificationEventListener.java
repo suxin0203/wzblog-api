@@ -93,6 +93,14 @@ public class NotificationEventListener {
     }
 
     /** 治理通知（A 方案 P0，复用 SYSTEM 类型，0 迁移）：下架/恢复/彻底删除/接管告知原作者。 */
+    /** 标题截断：notifications.content 上限 500，标题 255 兜底截断并加省略号。 */
+    private static String truncate(String text, int limit) {
+        if (text == null || text.length() <= limit) {
+            return text == null ? "" : text;
+        }
+        return text.substring(0, limit) + "…";
+    }
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onArticleModerated(ArticleModeratedEvent event) {
         try {
@@ -107,9 +115,11 @@ public class NotificationEventListener {
                 default -> "你的文章状态发生变更";
             };
             String reason = event.reason() == null || event.reason().isBlank()
-                    ? "" : "原因：" + event.reason();
+                    ? "" : " 原因：" + event.reason();
+            // 通知正文携带文章标题（超长截断 40 字），作者才知道被治理的是哪一篇
+            String content = "《" + truncate(event.articleTitle(), 40) + "》" + reason;
             notificationAppService.create(event.authorId(), event.moderatorId(), "SYSTEM",
-                    title, reason, "ARTICLE", String.valueOf(event.articleId()),
+                    title, content, "ARTICLE", String.valueOf(event.articleId()),
                     "article_moderated:" + event.articleId() + ":" + event.action()
                             + ":" + event.version());
         } catch (Exception ex) {

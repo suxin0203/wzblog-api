@@ -21,6 +21,7 @@ import com.wzblog.modules.media.infra.config.FileStorageProperties;
 import com.wzblog.modules.media.infra.image.ImageAnalyzer;
 import com.wzblog.modules.media.infra.mapper.FileMapper;
 import com.wzblog.modules.media.infra.mapper.FileReferenceQueryMapper;
+import com.wzblog.modules.media.infra.mapper.FileThumbRow;
 import com.wzblog.modules.media.infra.storage.ObjectStorage;
 import com.wzblog.modules.media.infra.storage.UrlSigner;
 import org.slf4j.Logger;
@@ -39,6 +40,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -296,6 +298,21 @@ public class FileAppService implements FileReferencePort {
         return new UrlVO(String.valueOf(entry.getId()), url, null, expiresAt);
     }
 
+    // ------------------------------------------------------------ 列表展示接线
+
+    /** 批量取缩略图 key（列表封面用）：仅 ACTIVE 且已生成；未生成/非图片无条目，调用方回退原图。 */
+    @Transactional(readOnly = true)
+    public Map<String, String> thumbKeysByObjectKeys(Collection<String> objectKeys) {
+        if (objectKeys == null || objectKeys.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        for (FileThumbRow row : fileMapper.selectThumbKeysByObjectKeys(objectKeys)) {
+            result.put(row.getObjectKey(), row.getThumbKey());
+        }
+        return result;
+    }
+
     // ------------------------------------------------------------ 删除
 
     /** 引用判定耗时告警阈值（D59）。 */
@@ -443,9 +460,13 @@ public class FileAppService implements FileReferencePort {
 
     // ------------------------------------------------------------ 对象读取（media 路由）
 
-    /** GET /media/{key}：ACTIVE/ORPHAN 公开；TEMP 需有效签名。 */
+    /** GET /media/{key}：ACTIVE/ORPHAN 公开；TEMP 需有效签名；缩略图派生对象随父文件状态公开。 */
     public MediaContent readForServe(String objectKey, Long exp, String sig) {
         FileEntry entry = fileMapper.selectByObjectKey(objectKey);
+        if (entry == null && objectKey.endsWith("_thumb.jpg")) {
+            // 缩略图无独立 files 行：按 thumb_key 反查父文件，父文件状态决定可服务性
+            entry = fileMapper.selectByThumbKey(objectKey);
+        }
         if (entry == null) {
             throw new BusinessException(ErrorCode.COMMON_NOT_FOUND);
         }
@@ -454,7 +475,9 @@ public class FileAppService implements FileReferencePort {
             if (bytes == null) {
                 throw new BusinessException(ErrorCode.COMMON_NOT_FOUND);
             }
-            return new MediaContent(bytes, entry.getMimeType(), true);
+            // 缩略图统一编码为 JPEG，按 key 后缀标注真实 content-type（父文件 mime 是原图的）
+            String mime = objectKey.endsWith("_thumb.jpg") ? "image/jpeg" : entry.getMimeType();
+            return new MediaContent(bytes, mime, true);
         }
         if (entry.getStatus() == FileStatus.TEMP
                 && exp != null && sig != null

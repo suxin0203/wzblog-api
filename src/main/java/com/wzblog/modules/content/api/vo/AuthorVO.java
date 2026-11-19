@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 public record AuthorVO(
         @JsonSerialize(using = ToStringSerializer.class) Long id,
         String nickname,
-        String avatarKey
+        String avatarKey,
+        /** 当前佩戴称号名（未佩戴为 null），作者旁徽标展示。 */
+        String activeTitle
 ) {
 }

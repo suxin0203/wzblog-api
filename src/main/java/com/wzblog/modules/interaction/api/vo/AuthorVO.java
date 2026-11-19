@@ -9,10 +9,12 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
  */
 public record AuthorVO(
         @JsonSerialize(using = ToStringSerializer.class) Long userId,
-        String nickname, String avatarKey, boolean guest) {
+        String nickname, String avatarKey, boolean guest,
+        /** 当前佩戴称号名（游客/未佩戴为 null），评论作者旁徽标展示。 */
+        String activeTitle) {
 
     public static AuthorVO guest(String nickname) {
         return new AuthorVO(null, nickname == null || nickname.isBlank() ? "匿名" : nickname, null,
-                true);
+                true, null);
     }
 }

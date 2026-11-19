@@ -17,6 +17,8 @@ public record ArticleListItemVO(
         String slug,
         String summary,
         String coverKey,
+        /** 列表展示用缩略图对象 key（files.thumb_key）；未生成/非图片为 null，前端回退 coverKey 原图。 */
+        String coverThumbKey,
         CategoryBriefVO category,
         List<TagBriefVO> tags,
         AuthorVO author,

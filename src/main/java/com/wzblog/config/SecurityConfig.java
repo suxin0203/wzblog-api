@@ -28,6 +28,23 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 
 /**
  * 无状态安全链：JSON 401/403 + Bearer Token 过滤器 + 路由级角色控制。
+ *
+ * <p>【教学：读懂 Spring Security 的钥匙】（详解见 docs/学习文档/07）</p>
+ * <p>Spring Security 的本质是"一串过滤器"（SecurityFilterChain），在请求到达
+ * Controller 之前运行。本类用 Lambda DSL 配置了这条链，几个关键决策：</p>
+ * <ul>
+ *   <li><b>关掉四样默认行为</b>：csrf（前后端分离无 Cookie 会话，CSRF 无从谈起）、
+ *       httpBasic/formLogin/logout（本项目用 JWT，不用表单/弹窗登录）；</li>
+ *   <li><b>彻底无状态</b>：STATELESS 会话策略 + NullSecurityContextRepository
+ *       —— 不建 HttpSession，身份每次请求靠 token 重建（多实例部署零共享）；</li>
+ *   <li><b>双层权限</b>：本类的路由级规则（快、粗）+ 各 Controller 上的
+ *       {@code @PreAuthorize}（细、显式）互为纵深防御 ——
+ *       {@code @EnableMethodSecurity} 就是方法级注解的开关；</li>
+ *   <li><b>默认拒绝</b>：anyRequest().authenticated() 兜底 —— 新接口忘配权限
+ *       = 需要登录，而不是裸奔（安全默认值）。</li>
+ * </ul>
+ * <p>规则顺序敏感（从上到下首个命中生效）：细粒度路径必须排在粗粒度之前，
+ * 所以 /admin/users/** 在 /admin/** 之前。</p>
  */
 @Configuration
 @EnableMethodSecurity
@@ -144,6 +161,13 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * 密码哈希器：BCrypt（强度 10）。
+     * 为什么不用 MD5/SHA256：它们太快，拖库后显卡暴力机每秒可试数十亿次；
+     * BCrypt 自带随机盐（同一密码每次哈希结果不同，彩虹表无效）且刻意慢
+     * （cost=10 约 100ms/次），是密码存储的行业标准。
+     * 业务代码统一用 passwordEncoder.matches(raw, hash) 比对，永远不要自己拼哈希。
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(10);

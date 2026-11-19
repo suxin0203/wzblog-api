@@ -458,13 +458,14 @@ public class CommentAppService {
         UserBrief author = comment.getUserId() == null ? null : users.get(comment.getUserId());
         AuthorVO authorVO = deleted || author == null
                 ? new AuthorVO(null, comment.getGuestName() == null ? "匿名" : comment.getGuestName(),
-                        null, comment.getUserId() == null)
-                : new AuthorVO(author.id(), author.nickname(), author.avatarKey(), false);
+                        null, comment.getUserId() == null, null)
+                : new AuthorVO(author.id(), author.nickname(), author.avatarKey(), false, author.activeTitle());
         AuthorVO replyTo = null;
         if (comment.getReplyToUserId() != null) {
             UserBrief target = users.get(comment.getReplyToUserId());
             replyTo = new AuthorVO(comment.getReplyToUserId(),
-                    target == null ? "已注销用户" : target.nickname(), null, false);
+                    target == null ? "已注销用户" : target.nickname(), null, false,
+                    target == null ? null : target.activeTitle());
         }
         boolean isSelf = viewerIds != null && comment.getUserId() != null
                 && viewerIds.contains(comment.getUserId());

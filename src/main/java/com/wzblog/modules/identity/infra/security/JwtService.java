@@ -20,24 +20,47 @@ import java.util.UUID;
 
 /**
  * Access Token 签发与校验：HS256、15 分钟，claims 仅 sub/role/jti/iss/aud/iat/exp。
+ *
+ * <p>【教学：JWT 服务的要点】（详解见 docs/学习文档/07）</p>
+ * <ul>
+ *   <li><b>claims 里放什么</b>：只放"还原身份所需的最小集"—— sub(userId)、role、
+ *       jti（唯一号，登出黑名单的键）。JWT 前两段只是 Base64，<b>谁都能解码看</b>，
+ *       所以绝不放密码/手机号等敏感信息；签名只保证"不可伪造"，不保证"不可读"。</li>
+ *   <li><b>iss/aud 校验</b>：签发者(wzblog)与受众(wzblog-web)都验 ——
+ *       防止"别处签发的令牌"混进本系统。</li>
+ *   <li><b>构造器 fail-fast</b>：密钥不足 256 位直接启动失败（IllegalStateException），
+ *       而不是运行到第一次签发时才炸 —— 配置错误在启动一刻暴露，这是
+ *       "fail-fast"原则的标准落地。</li>
+ *   <li><b>过期与无效分开报</b>：parse 时 ExpiredJwtException → AUTH_TOKEN_EXPIRED
+ *       （提示重新登录），其他验签失败 → AUTH_TOKEN_INVALID（token 被篡改/格式坏）。
+ *       前端对两种错误的处理不同（前者可静默刷新，后者必须踢回登录页）。</li>
+ * </ul>
  */
 @Component
 public class JwtService {
 
+    /** 自定义 claim 名：角色。 */
     public static final String ROLE_CLAIM = "role";
 
     private final AuthProperties properties;
     private final SecretKey key;
 
+    /** 构造器里完成密钥校验与 SecretKey 构建（fail-fast，见类注释）。 */
     public JwtService(AuthProperties properties) {
         this.properties = properties;
         byte[] secret = properties.getJwtSecret().getBytes(StandardCharsets.UTF_8);
         if (secret.length < 32) {
+            // HS256 安全下限 256bit：短密钥可被暴力破解，宁可启动失败也不带病运行
             throw new IllegalStateException("wzblog.auth.jwt-secret must be at least 256 bits");
         }
         this.key = Keys.hmacShaKeyFor(secret);
     }
 
+    /**
+     * 签发 access token（全项目唯一签发口）。
+     * 双令牌体系里它只管"短命门禁卡"（15 分钟）；换新的长命 refresh token
+     * 由 AuthAppService.issueTokens 统一编排（登录/刷新/微信登录都汇流到那里）。
+     */
     public IssuedAccessToken issue(Long userId, Role role) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(properties.getAccessTtl());

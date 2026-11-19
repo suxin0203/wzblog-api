@@ -2,10 +2,13 @@ package com.wzblog.modules.content.api;
 
 import com.wzblog.common.api.PageResult;
 import com.wzblog.common.api.Result;
+import com.wzblog.common.error.BusinessException;
 import com.wzblog.common.web.CurrentUser;
+import com.wzblog.modules.content.api.dto.ArticlePurgeBatchRequest;
 import com.wzblog.modules.content.api.dto.ArticleTakeoverRequest;
 import com.wzblog.modules.content.api.vo.ArticleEditVO;
 import com.wzblog.modules.content.api.vo.ArticleListItemVO;
+import com.wzblog.modules.content.api.vo.PurgeBatchVO;
 import com.wzblog.modules.content.app.ArticleReadService;
 import com.wzblog.modules.content.app.ArticleWriteService;
 import jakarta.validation.Valid;
@@ -19,6 +22,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 后台文章（站务治理）：列表（含回收站）、恢复、彻底删除、接管。
@@ -64,6 +70,23 @@ public class AdminArticleController {
                               @PathVariable Long id) {
         writeService.purge(currentUser, id);
         return Result.ok();
+    }
+
+    /** 回收站批量彻底删除：逐篇独立事务（经 writeService 代理调用），单篇失败不影响其余。 */
+    @PostMapping("/purge-batch")
+    public Result<PurgeBatchVO> purgeBatch(@AuthenticationPrincipal CurrentUser currentUser,
+                                           @Valid @RequestBody ArticlePurgeBatchRequest request) {
+        List<Long> succeeded = new ArrayList<>();
+        List<PurgeBatchVO.Failed> failed = new ArrayList<>();
+        for (Long id : request.ids()) {
+            try {
+                writeService.purge(currentUser, id);
+                succeeded.add(id);
+            } catch (BusinessException ex) {
+                failed.add(new PurgeBatchVO.Failed(id, ex.errorCode().name()));
+            }
+        }
+        return Result.ok(new PurgeBatchVO(succeeded, failed));
     }
 
     /** 接管：ADMIN 成为作者后才能编辑他人文章；审计 + 通知原作者。 */

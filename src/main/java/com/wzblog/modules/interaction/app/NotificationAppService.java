@@ -244,7 +244,7 @@ public class NotificationAppService {
         UserBrief actor = notification.getActorId() == null ? null
                 : actors.get(notification.getActorId());
         AuthorVO actorVO = actor == null ? null
-                : new AuthorVO(actor.id(), actor.nickname(), actor.avatarKey(), false);
+                : new AuthorVO(actor.id(), actor.nickname(), actor.avatarKey(), false, actor.activeTitle());
         return new NotificationVO(String.valueOf(notification.getId()), notification.getType(),
                 notification.getTitle(), notification.getContent(), notification.getLinkType(),
                 notification.getLinkId(), actorVO, Boolean.TRUE.equals(notification.getIsRead()),

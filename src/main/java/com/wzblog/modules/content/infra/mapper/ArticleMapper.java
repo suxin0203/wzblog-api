@@ -17,6 +17,28 @@ import java.util.Map;
 
 /**
  * 文章读写。列表 SQL 一律只选白名单列，禁止 SELECT content_md/content_html/content_text。
+ *
+ * <p>【教学：本项目最精彩的 Mapper，值得逐行精读】（详解见 docs/学习文档/06）</p>
+ * <p>MyBatis-Plus 的三种写法在这里全部出现：</p>
+ * <ol>
+ *   <li><b>继承 BaseMapper&lt;Article&gt;</b>：白得 insert/deleteById/updateById/
+ *       selectById/selectPage 等单表 CRUD，不用写一行 SQL；</li>
+ *   <li><b>注解静态 SQL</b>（@Select）：简单查询直接写，#{slug} 是预编译占位符
+ *       （值当参数传，天然防 SQL 注入 —— 永远不要用 ${} 拼接用户输入）；</li>
+ *   <li><b>&lt;script&gt; 动态 SQL</b>：需要按条件拼装时用，
+ *       &lt;if&gt;/&lt;choose&gt; 标签按参数有无拼 WHERE。</li>
+ * </ol>
+ * <p>四个值得抄的工程细节：</p>
+ * <ul>
+ *   <li><b>LIST_COLUMNS 白名单常量</b>：列表查询绝不 SELECT *（正文三列是大字段，
+ *       列表页拖着它们纯浪费内存带宽），常量复用保证每个列表口径一致；</li>
+ *   <li><b>PUBLIC_FILTER 公共口径</b>：'PUBLISHED+PUBLIC+未删' 的可见性条件
+ *       抽成常量，信息流/归档/榜单共用 —— 保证"计数=明细"永不打架；</li>
+ *   <li><b>游标元组比较</b>：{@code (published_at, id) < (#{t}, #{id})} 一行实现
+ *       "从上次最后一条继续"，同毫秒文章靠 id 决胜负（tie-breaker）；</li>
+ *   <li><b>条件 UPDATE 状态机</b>：publish/archive 等迁移 SQL 带 WHERE status=...，
+ *       影响行数 0 = 并发冲突 → 服务层转业务错误码，数据库是并发最可靠的仲裁者。</li>
+ * </ul>
  */
 @Mapper
 public interface ArticleMapper extends BaseMapper<Article> {
@@ -470,6 +492,23 @@ public interface ArticleMapper extends BaseMapper<Article> {
             </script>
             """)
     Integer selectCounter(@Param("id") Long id, @Param("type") String type);
+
+    /** purge 显式分步删除（先子后主）：绕开 InnoDB「CASCADE 删子行 + comments 自引用(parent_id/root_id) SET NULL」
+     *  组合抛 1452 的缺陷——含楼中楼回复的文章经文章级联删除必现；显式顺序消除级联歧义。 */
+    @Delete("DELETE FROM comments WHERE article_id = #{id}")
+    int purgeComments(@Param("id") Long id);
+
+    @Delete("DELETE FROM article_tags WHERE article_id = #{id}")
+    int purgeArticleTags(@Param("id") Long id);
+
+    @Delete("DELETE FROM article_revisions WHERE article_id = #{id}")
+    int purgeRevisions(@Param("id") Long id);
+
+    @Delete("DELETE FROM article_reactions WHERE article_id = #{id}")
+    int purgeReactions(@Param("id") Long id);
+
+    @Delete("DELETE FROM article_daily_stats WHERE article_id = #{id}")
+    int purgeDailyStats(@Param("id") Long id);
 
     @Delete("DELETE FROM articles WHERE id = #{id}")
     int purge(@Param("id") Long id);

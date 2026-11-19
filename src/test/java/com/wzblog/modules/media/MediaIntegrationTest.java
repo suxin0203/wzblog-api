@@ -1,6 +1,7 @@
 package com.wzblog.modules.media;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.wzblog.modules.media.infra.storage.ObjectStorage;
 import com.wzblog.support.IdentityTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,9 @@ class MediaIntegrationTest extends IdentityTestSupport {
 
     @Autowired
     private TestRestTemplate rest;
+
+    @Autowired
+    private ObjectStorage objectStorage;
 
     @org.springframework.beans.factory.annotation.Value("${local.server.port}")
     private int serverPort;
@@ -532,6 +536,31 @@ class MediaIntegrationTest extends IdentityTestSupport {
 
         String publicUrl = relativePath(signedUrl.substring(0, signedUrl.indexOf("?exp=")));
         assertThat(rest.getForEntity(publicUrl, byte[].class).getStatusCode().value()).isEqualTo(404);
+    }
+
+    /** 缩略图派生对象 serve：按 thumb_key 反查父文件，公开读 + immutable 缓存 + image/jpeg。 */
+    @Test
+    void serveThumbDerivedObjectWithImmutableCache() throws Exception {
+        String objectKey = "articles/2026/10/" + java.util.UUID.randomUUID().toString().replace("-", "") + ".png";
+        String thumbKey = "articles/2026/10/" + java.util.UUID.randomUUID().toString().replace("-", "") + "_thumb.jpg";
+        jdbc.update("""
+                INSERT INTO files (bucket, object_key, thumb_key, original_name, mime_type, size_bytes,
+                                   uploader_id, biz_type, status, ref_count)
+                VALUES ('local', ?, ?, 'cover.png', 'image/png', 100, ?, 'ARTICLE_COVER', 'ACTIVE', 1)
+                """, objectKey, thumbKey, userId("bootstrap_admin"));
+        byte[] thumb = pngBytes(800, 400);
+        objectStorage.put(thumbKey, thumb);
+
+        ResponseEntity<byte[]> served = rest.getForEntity(relativePath("/media/" + thumbKey), byte[].class);
+        assertThat(served.getStatusCode().value()).isEqualTo(200);
+        assertThat(served.getHeaders().getContentType().toString()).isEqualTo("image/jpeg");
+        assertThat(served.getHeaders().getCacheControl()).contains("immutable");
+        assertThat(served.getBody()).isEqualTo(thumb);
+
+        // 未登记的 thumb key（无父文件行）→ 404
+        String unknown = "articles/2026/10/" + java.util.UUID.randomUUID().toString().replace("-", "") + "_thumb.jpg";
+        assertThat(rest.getForEntity(relativePath("/media/" + unknown), byte[].class)
+                .getStatusCode().value()).isEqualTo(404);
     }
 
     // ------------------------------------------------------------ 清理
