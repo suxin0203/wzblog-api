@@ -894,7 +894,7 @@ paths:
         required: true
       responses:
         '200':
-          description: Created
+          description: OK
           content:
             application/json:
               schema:
@@ -1452,6 +1452,34 @@ paths:
           $ref: '#/components/responses/Error403'
       summary: 后台列表（含回收站）
       description: 契约 R044 ｜ 模块 M2 ｜ 权限 ADMIN ｜ 幂等：天然
+      security:
+      - bearerAuth: []
+  /api/v1/admin/articles/purge-batch:
+    post:
+      tags:
+      - admin-content
+      operationId: purgeBatch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArticlePurgeBatchRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultPurgeBatchVO'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+      summary: POST /api/v1/admin/articles/purge-batch
+      description: POST /api/v1/admin/articles/purge-batch
       security:
       - bearerAuth: []
   /api/v1/admin/articles/{id}/purge:
@@ -3515,7 +3543,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ResultTitleVO'
+                $ref: '#/components/schemas/ResultAdminTitleVO'
         '400':
           $ref: '#/components/responses/Error400'
         '401':
@@ -3550,7 +3578,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ResultTitleVO'
+                $ref: '#/components/schemas/ResultAdminTitleVO'
         '400':
           $ref: '#/components/responses/Error400'
         '401':
@@ -3605,6 +3633,11 @@ paths:
         schema:
           type: string
           description: 字符串化 ID
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          type: string
       requestBody:
         content:
           application/json:
@@ -4091,6 +4124,12 @@ paths:
           type: integer
           format: int32
           default: 20
+      - name: includeTool
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
       responses:
         '200':
           description: OK
@@ -5210,7 +5249,7 @@ paths:
       description: 契约 R138 ｜ 模块 M7 ｜ 权限 ADMIN ｜ 幂等：天然
       security:
       - bearerAuth: []
-  /wechat/openid/{code}:
+  /api/v1/legacy/wechat/openid/{code}:
     get:
       tags:
       - legacy-wechat
@@ -5236,7 +5275,7 @@ paths:
       summary: code 换 openid（旧响应格式）
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /wechat/userinfo/{openid}:
+  /api/v1/legacy/wechat/userinfo/{openid}:
     get:
       tags:
       - legacy-wechat
@@ -5262,7 +5301,7 @@ paths:
       summary: openid 查绑定并发 Token；**仅靠 openid，公网部署必须加网关白名单**
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /miniapp/qr-login/bind-and-confirm:
+  /api/v1/legacy/miniapp/qr-login/bind-and-confirm:
     post:
       tags:
       - legacy-qr
@@ -5285,10 +5324,12 @@ paths:
                 additionalProperties: {}
         '400':
           $ref: '#/components/responses/Error400'
+        '409':
+          $ref: '#/components/responses/Error409'
       summary: 绑定已有账号并确认
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /miniapp/qr-login/entry:
+  /api/v1/legacy/miniapp/qr-login/entry:
     post:
       tags:
       - legacy-qr
@@ -5311,10 +5352,12 @@ paths:
                 additionalProperties: {}
         '400':
           $ref: '#/components/responses/Error400'
+        '409':
+          $ref: '#/components/responses/Error409'
       summary: 小程序扫码进入（code + sceneId）
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /miniapp/qr-login/register-and-confirm:
+  /api/v1/legacy/miniapp/qr-login/register-and-confirm:
     post:
       tags:
       - legacy-qr
@@ -5337,10 +5380,12 @@ paths:
                 additionalProperties: {}
         '400':
           $ref: '#/components/responses/Error400'
+        '409':
+          $ref: '#/components/responses/Error409'
       summary: 注册并确认 PC 登录
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /qr-login/session:
+  /api/v1/legacy/qr-login/session:
     post:
       tags:
       - legacy-qr
@@ -5362,10 +5407,12 @@ paths:
                 additionalProperties: {}
         '400':
           $ref: '#/components/responses/Error400'
+        '409':
+          $ref: '#/components/responses/Error409'
       summary: 创建 PC 扫码会话
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /qr-login/session/{sceneId}:
+  /api/v1/legacy/qr-login/session/{sceneId}:
     get:
       tags:
       - legacy-qr
@@ -5391,7 +5438,7 @@ paths:
       summary: 轮询；CONFIRMED 时一次性下发 Token
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /qr-login/session/{sceneId}/code.png:
+  /api/v1/legacy/qr-login/session/{sceneId}/code.png:
     get:
       tags:
       - legacy-qr
@@ -5421,7 +5468,7 @@ paths:
       summary: 小程序码 PNG
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /users/captcha:
+  /api/v1/legacy/users/captcha:
     get:
       tags:
       - legacy-users
@@ -5439,7 +5486,7 @@ paths:
       summary: 旧算术验证码
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /users/login:
+  /api/v1/legacy/users/login:
     post:
       tags:
       - legacy-users
@@ -5462,10 +5509,12 @@ paths:
                 additionalProperties: {}
         '400':
           $ref: '#/components/responses/Error400'
+        '409':
+          $ref: '#/components/responses/Error409'
       summary: 旧登录协议
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /users/me:
+  /api/v1/legacy/users/me:
     get:
       tags:
       - legacy-users
@@ -5486,9 +5535,8 @@ paths:
           $ref: '#/components/responses/Error403'
       summary: 旧资料接口；无 Bearer 返回 HTTP 401
       description: 权限 USER ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
-      security:
-      - bearerAuth: []
-  /users/refresh:
+      security: []
+  /api/v1/legacy/users/refresh:
     post:
       tags:
       - legacy-users
@@ -5511,10 +5559,12 @@ paths:
                 additionalProperties: {}
         '400':
           $ref: '#/components/responses/Error400'
+        '409':
+          $ref: '#/components/responses/Error409'
       summary: 旧刷新协议
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
-  /users/register:
+  /api/v1/legacy/users/register:
     post:
       tags:
       - legacy-users
@@ -5537,6 +5587,8 @@ paths:
                 additionalProperties: {}
         '400':
           $ref: '#/components/responses/Error400'
+        '409':
+          $ref: '#/components/responses/Error409'
       summary: 旧注册协议
       description: 权限 PUBLIC ｜ 旧协议兼容层：响应壳不同（数字 code、HTTP 恒 200、snake_case），协议细节以 docs/13-微信扫码复原计划.md 为准；新前端不要对接
       security: []
@@ -5627,8 +5679,6 @@ components:
           type: string
           maxLength: 255
           minLength: 0
-      required:
-      - nickname
     ResultUserSelfVO:
       type: object
       properties:
@@ -5844,6 +5894,8 @@ components:
           type: string
         avatarKey:
           type: string
+        activeTitle:
+          type: string
     CategoryBriefVO:
       type: object
       properties:
@@ -5990,19 +6042,7 @@ components:
           minimum: -100000
       required:
       - name
-    ResultTitleVO:
-      type: object
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-        data:
-          $ref: '#/components/schemas/TitleVO'
-        traceId:
-          type: string
-      description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
-    TitleVO:
+    AdminTitleVO:
       type: object
       properties:
         id:
@@ -6016,6 +6056,23 @@ components:
         sortOrder:
           type: integer
           format: int32
+        deleted:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    ResultAdminTitleVO:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminTitleVO'
+        traceId:
+          type: string
+      description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
     TagUpsertRequest:
       type: object
       properties:
@@ -6484,11 +6541,11 @@ components:
       properties:
         content:
           type: string
-          maxLength: 1100
+          maxLength: 10000
           minLength: 0
         nickname:
           type: string
-          maxLength: 40
+          maxLength: 30
           minLength: 0
       required:
       - content
@@ -6630,6 +6687,98 @@ components:
         traceId:
           type: string
       description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
+    WechatLoginRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 128
+          minLength: 0
+        nickname:
+          type: string
+          maxLength: 30
+          minLength: 0
+        avatarKey:
+          type: string
+          maxLength: 255
+          minLength: 0
+          pattern: ^[0-9A-Za-z][0-9A-Za-z/_.-]*$
+      required:
+      - code
+    ResultWechatLoginVO:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/WechatLoginVO'
+        traceId:
+          type: string
+      description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
+    WechatLoginVO:
+      type: object
+      properties:
+        tokenType:
+          type: string
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+          format: int32
+        refreshToken:
+          type: string
+        refreshExpiresIn:
+          type: integer
+          format: int32
+        user:
+          $ref: '#/components/schemas/WechatUserVO'
+    WechatUserVO:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        nickname:
+          type: string
+        avatarKey:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        openidBound:
+          type: boolean
+    WechatBindRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 128
+          minLength: 0
+      required:
+      - code
+    ResultWechatBindVO:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/WechatBindVO'
+        traceId:
+          type: string
+      description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
+    WechatBindVO:
+      type: object
+      properties:
+        bound:
+          type: boolean
+        user:
+          $ref: '#/components/schemas/WechatUserVO'
     RegisterRequest:
       type: object
       properties:
@@ -6657,6 +6806,7 @@ components:
           type: string
           description: 图形验证码内容
       required:
+      - email
       - password
       - username
     RefreshRequest:
@@ -6691,6 +6841,100 @@ components:
         refreshExpiresIn:
           type: integer
           format: int32
+    QrTicketExchangeRequest:
+      type: object
+      properties:
+        ticket:
+          type: string
+          maxLength: 43
+          minLength: 43
+      required:
+      - ticket
+    QrSessionVO:
+      type: object
+      properties:
+        sceneId:
+          type: string
+        status:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    ResultQrSessionVO:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/QrSessionVO'
+        traceId:
+          type: string
+      description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
+    QrRegisterConfirmRequest:
+      type: object
+      properties:
+        bindToken:
+          type: string
+          maxLength: 43
+          minLength: 43
+        username:
+          type: string
+          minLength: 1
+          pattern: ^(?!deleted_)[A-Za-z0-9_]{4,20}$
+        password:
+          type: string
+          minLength: 1
+          pattern: ^(?=.*[A-Za-z])(?=.*[0-9])[\x21-\x7E]{8,64}$
+        nickname:
+          type: string
+          maxLength: 30
+          minLength: 0
+      required:
+      - bindToken
+      - password
+      - username
+    QrConfirmVO:
+      type: object
+      properties:
+        sceneId:
+          type: string
+        status:
+          type: string
+        bindToken:
+          type: string
+        bindTokenExpiresAt:
+          type: string
+          format: date-time
+    ResultQrConfirmVO:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/QrConfirmVO'
+        traceId:
+          type: string
+      description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
+    QrConfirmRequest:
+      type: object
+      properties:
+        bindToken:
+          type: string
+          maxLength: 43
+          minLength: 43
+        userInfo:
+          $ref: '#/components/schemas/UserInfo'
+    UserInfo:
+      type: object
+      properties:
+        nickname:
+          type: string
+          maxLength: 30
+          minLength: 0
     ForgotVerifyRequest:
       type: object
       properties:
@@ -6924,14 +7168,14 @@ components:
       properties:
         content:
           type: string
-          maxLength: 2100
+          maxLength: 20000
           minLength: 0
         parentId:
           type: string
           description: 回复目标评论 id；为空表示根评论
         guestNickname:
           type: string
-          maxLength: 40
+          maxLength: 30
           minLength: 0
           description: 游客评论时的昵称；登录用户忽略
       required:
@@ -7033,7 +7277,7 @@ components:
       properties:
         message:
           type: string
-          maxLength: 600
+          maxLength: 6000
           minLength: 0
         sessionId:
           type: string
@@ -7208,6 +7452,50 @@ components:
           type: string
           maxLength: 255
           minLength: 0
+    ArticlePurgeBatchRequest:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+          maxItems: 1000
+          minItems: 0
+      required:
+      - ids
+    Failed:
+      type: object
+      properties:
+        id:
+          type: string
+          description: 线上为字符串（docs/04 §1.3 BIGINT ID 一律字符串）
+        code:
+          type: string
+    PurgeBatchVO:
+      type: object
+      properties:
+        succeeded:
+          type: array
+          items:
+            type: integer
+            format: int64
+        failed:
+          type: array
+          items:
+            $ref: '#/components/schemas/Failed'
+    ResultPurgeBatchVO:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/PurgeBatchVO'
+        traceId:
+          type: string
+      description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
     PublicUserProfileVO:
       type: object
       properties:
@@ -7287,6 +7575,20 @@ components:
         traceId:
           type: string
       description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
+    TitleVO:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cssClass:
+          type: string
+        description:
+          type: string
+        sortOrder:
+          type: integer
+          format: int32
     ResultListTagVO:
       type: object
       properties:
@@ -7585,6 +7887,8 @@ components:
           type: string
         coverKey:
           type: string
+        coverThumbKey:
+          type: string
         category:
           $ref: '#/components/schemas/CategoryBriefVO'
         tags:
@@ -7605,6 +7909,19 @@ components:
         commentCount:
           type: integer
           format: int32
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - PUBLISHED
+          - ARCHIVED
+        visibility:
+          type: string
+          enum:
+          - PUBLIC
+          - PRIVATE
+          - UNLISTED
+          description: 文章可见性
         isPinned:
           type: boolean
         readingSeconds:
@@ -7720,6 +8037,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CategoryVO'
+        traceId:
+          type: string
+      description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
+    QrStatusVO:
+      type: object
+      properties:
+        sceneId:
+          type: string
+        status:
+          type: string
+        ticket:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        client:
+          type: object
+          additionalProperties: {}
+    ResultQrStatusVO:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/QrStatusVO'
         traceId:
           type: string
       description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
@@ -8154,25 +8498,6 @@ components:
         traceId:
           type: string
       description: 统一响应壳：code=OK 表示成功；失败时 data=null（仅参数校验失败时 data.errors={字段:原因}）；traceId 贯穿日志
-    AdminTitleVO:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        cssClass:
-          type: string
-        description:
-          type: string
-        sortOrder:
-          type: integer
-          format: int32
-        deleted:
-          type: boolean
-        createdAt:
-          type: string
-          format: date-time
     ResultListAdminTitleVO:
       type: object
       properties:
@@ -8509,6 +8834,10 @@ components:
         guest:
           type: boolean
           description: 是否游客
+        activeTitle:
+          type: string
+          nullable: true
+          description: 当前佩戴称号名（游客/未佩戴为 null），评论作者旁徽标展示
     PendingUserBriefVO:
       type: object
       properties:
