@@ -4,7 +4,7 @@ import com.wzblog.common.error.ErrorCode;
 import com.wzblog.common.web.TraceId;
 
 /**
- * 统一响应壳 —— 全项目所有 HTTP 接口的唯一出参形状（教学详解见 docs/学习文档/05）。
+ * 统一响应壳 —— 全项目所有 HTTP 接口的唯一出参形状（教学详解见 monorepo 根 docs/学习文档/05）。
  *
  * <p>【它是什么】四字段 record：业务码 + 人类可读消息 + 业务数据 + 链路追踪号。</p>
  *

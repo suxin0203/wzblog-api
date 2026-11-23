@@ -5,7 +5,7 @@ import org.slf4j.MDC;
 import java.util.UUID;
 
 /**
- * TraceId 工具：基于 SLF4J MDC 的链路追踪号存取（教学详解见 docs/学习文档/04 与 13）。
+ * TraceId 工具：基于 SLF4J MDC 的链路追踪号存取（教学详解见 monorepo 根 docs/学习文档/04 与 13）。
  *
  * <p>【教学：MDC 是什么】Mapped Diagnostic Context —— SLF4J 提供的<b>线程级</b>键值上下文。
  * 线程里 put 过的值，此后该线程打出的每一行日志都会自动携带（配合 logback pattern 里的

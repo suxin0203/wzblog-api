@@ -18,7 +18,7 @@ import java.util.Map;
 /**
  * 文章读写。列表 SQL 一律只选白名单列，禁止 SELECT content_md/content_html/content_text。
  *
- * <p>【教学：本项目最精彩的 Mapper，值得逐行精读】（详解见 docs/学习文档/06）</p>
+ * <p>【教学：本项目最精彩的 Mapper，值得逐行精读】（详解见 monorepo 根 docs/学习文档/06）</p>
  * <p>MyBatis-Plus 的三种写法在这里全部出现：</p>
  * <ol>
  *   <li><b>继承 BaseMapper&lt;Article&gt;</b>：白得 insert/deleteById/updateById/
@@ -518,4 +518,4 @@ public interface ArticleMapper extends BaseMapper<Article> {
 
     @Delete("DELETE FROM articles WHERE id = #{id}")
     int purge(@Param("id") Long id);
-}
+}

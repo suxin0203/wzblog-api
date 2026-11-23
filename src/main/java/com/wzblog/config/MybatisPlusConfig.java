@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * MyBatis-Plus 插件配置 —— 注册分页与乐观锁两个内拦截器（教学详解见 docs/学习文档/06）。
+ * MyBatis-Plus 插件配置 —— 注册分页与乐观锁两个内拦截器（教学详解见 monorepo 根 docs/学习文档/06）。
  *
  * <p>【教学：@Configuration + @Bean 的意义】MybatisPlusInterceptor 是第三方库的类，
  * 没法在人家源码上加 @Component —— 于是用"@Configuration 类的 @Bean 方法"把它纳入

@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.EnumValue;
 /**
  * 角色（00 §6.1）：{@code USER < EDITOR < ADMIN}。
  *
- * <p>【教学：枚举建模角色的三个要点】（详解见 docs/学习文档/07）</p>
+ * <p>【教学：枚举建模角色的三个要点】（详解见 monorepo 根 docs/学习文档/07）</p>
  * <ul>
  *   <li><b>扁平三层而非 RBAC 多表</b>：博客量级用"角色枚举 + 角色层级"足够，
  *       引入 role/permission 关联表是过度设计 —— 技术选型匹配业务复杂度；</li>

@@ -19,7 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 全局异常处理器 —— 把任何一层抛出的异常统一翻译成 {@link Result} JSON（教学详解见 docs/学习文档/05）。
+ * 全局异常处理器 —— 把任何一层抛出的异常统一翻译成 {@link Result} JSON（教学详解见 monorepo 根 docs/学习文档/05）。
  *
  * <p>【教学：@RestControllerAdvice 是什么】"给所有 @Controller 织入公共行为"的 AOP 机制。
  * 效果：业务代码只管抛异常，HTTP 状态码、响应体格式、响应头、日志在这里集中收口 ——

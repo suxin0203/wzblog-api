@@ -38,7 +38,7 @@ import java.util.List;
 /**
  * 文章路由（M2 §3）：公开读取、阅读上报与编辑写路径。
  *
- * <p>【教学：一个标准 Controller 的自我修养】（详解见 docs/学习文档/04 与 08）</p>
+ * <p>【教学：一个标准 Controller 的自我修养】（详解见 monorepo 根 docs/学习文档/04 与 08）</p>
  * <ul>
  *   <li><b>路径不带 /api/v1</b>：统一前缀由 WebConfig 挂载，Controller 只写业务路径；</li>
  *   <li><b>构造器注入 + final 字段</b>：依赖显式、不可变、便于单测 mock

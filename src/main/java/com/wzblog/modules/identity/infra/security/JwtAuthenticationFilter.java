@@ -23,7 +23,7 @@ import java.util.List;
  * Bearer Token 过滤器：校验签名/过期/黑名单，并回库校验用户存在且 ACTIVE（M1 §3.1）。
  * 未携带凭证时放行为匿名，受保护路径由 EntryPoint 输出 401。
  *
- * <p>【教学：自定义安全过滤器的三个关键设计】（详解见 docs/学习文档/04 与 07）</p>
+ * <p>【教学：自定义安全过滤器的三个关键设计】（详解见 monorepo 根 docs/学习文档/04 与 07）</p>
  * <ol>
  *   <li><b>匿名放行而非拒绝</b>：没带 token 的请求直接放行走完过滤器链 ——
  *       接口是否公开由 SecurityConfig 的权限矩阵决定。游客可访问首页、
@@ -109,4 +109,4 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         }
     }
-}
+}

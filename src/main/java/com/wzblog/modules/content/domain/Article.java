@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  * articles 表实体（V1__schema.sql）。content_md 是唯一事实源，其余正文列为派生列。
  * <p>不使用全局逻辑删除：所有查询显式过滤 {@code deleted_at}。</p>
  *
- * <p>【教学：读懂一个 MyBatis-Plus 实体】（详解见 docs/学习文档/06 与 08）</p>
+ * <p>【教学：读懂一个 MyBatis-Plus 实体】（详解见 monorepo 根 docs/学习文档/06 与 08）</p>
  * <ul>
  *   <li><b>@TableName("articles")</b>：类 ↔ 表映射；列名按驼峰互转
  *       （authorId ↔ author_id，由 map-underscore-to-camel-case 开启）；</li>
@@ -71,4 +71,4 @@ public class Article {
     public boolean isDeleted() {
         return deletedAt != null;
     }
-}
+}

@@ -29,7 +29,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 /**
  * 无状态安全链：JSON 401/403 + Bearer Token 过滤器 + 路由级角色控制。
  *
- * <p>【教学：读懂 Spring Security 的钥匙】（详解见 docs/学习文档/07）</p>
+ * <p>【教学：读懂 Spring Security 的钥匙】（详解见 monorepo 根 docs/学习文档/07）</p>
  * <p>Spring Security 的本质是"一串过滤器"（SecurityFilterChain），在请求到达
  * Controller 之前运行。本类用 Lambda DSL 配置了这条链，几个关键决策：</p>
  * <ul>
@@ -192,4 +192,4 @@ public class SecurityConfig {
             }
         };
     }
-}
+}

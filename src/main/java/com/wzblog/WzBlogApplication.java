@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServic
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * 应用入口 —— 整个后端唯一的 main 方法（教学详解见 docs/学习文档/02）。
+ * 应用入口 —— 整个后端唯一的 main 方法（教学详解见 monorepo 根 docs/学习文档/02）。
  *
  * <p>【教学：三个注解各司其职】</p>
  * <ul>

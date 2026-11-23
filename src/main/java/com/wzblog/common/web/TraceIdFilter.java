@@ -14,7 +14,7 @@ import java.io.IOException;
 import java.util.regex.Pattern;
 
 /**
- * 链路追踪过滤器：为每个请求分配/继承 traceId 并写入 MDC 与响应头（教学详解见 docs/学习文档/04）。
+ * 链路追踪过滤器：为每个请求分配/继承 traceId 并写入 MDC 与响应头（教学详解见 monorepo 根 docs/学习文档/04）。
  *
  * <p>【教学：Servlet Filter 的实战样板】这是"进入应用的第一道门"，做了三件事：</p>
  * <ol>

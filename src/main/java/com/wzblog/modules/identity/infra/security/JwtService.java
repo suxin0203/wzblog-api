@@ -21,7 +21,7 @@ import java.util.UUID;
 /**
  * Access Token 签发与校验：HS256、15 分钟，claims 仅 sub/role/jti/iss/aud/iat/exp。
  *
- * <p>【教学：JWT 服务的要点】（详解见 docs/学习文档/07）</p>
+ * <p>【教学：JWT 服务的要点】（详解见 monorepo 根 docs/学习文档/07）</p>
  * <ul>
  *   <li><b>claims 里放什么</b>：只放"还原身份所需的最小集"—— sub(userId)、role、
  *       jti（唯一号，登出黑名单的键）。JWT 前两段只是 Base64，<b>谁都能解码看</b>，
@@ -131,4 +131,4 @@ public class JwtService {
 
     public record AccessTokenClaims(Long userId, Role role, String jti, Instant expiresAt) {
     }
-}
+}

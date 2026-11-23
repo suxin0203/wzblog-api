@@ -7,7 +7,7 @@ import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * MVC 定制：统一 /api/v1 路径前缀 + 全局 CORS 策略（教学详解见 docs/学习文档/13）。
+ * MVC 定制：统一 /api/v1 路径前缀 + 全局 CORS 策略（教学详解见 monorepo 根 docs/学习文档/13）。
  *
  * <p>【教学：WebMvcConfigurer 是什么】Spring MVC 官方预留的"定制钩子"接口，
  * 实现 @Configuration 类后覆写对应方法即可微调框架行为 —— 比 @EnableWebMvc

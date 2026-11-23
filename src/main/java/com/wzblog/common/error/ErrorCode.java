@@ -3,7 +3,7 @@ package com.wzblog.common.error;
 /**
  * 错误码目录，与《04-接口契约》§7 逐字对齐；禁止自造未登记码。
  *
- * <p>【教学：为什么用枚举做全系统错误目录】（详解见 docs/学习文档/05）</p>
+ * <p>【教学：为什么用枚举做全系统错误目录】（详解见 monorepo 根 docs/学习文档/05）</p>
  * <ul>
  *   <li>每个枚举值携带三元组（业务码字符串、HTTP 状态、默认中文文案）——
  *       抛异常的人 {@code throw new BusinessException(ErrorCode.XXX)} 一行搞定，
@@ -164,4 +164,4 @@ public enum ErrorCode {
     public String defaultMessage() {
         return defaultMessage;
     }
-}
+}

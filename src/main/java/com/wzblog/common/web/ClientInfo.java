@@ -5,7 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 /**
  * 客户端信息（IP + User-Agent）。代理头仅在请求来自本机/环回地址时采信。
  *
- * <p>【教学：获取客户端 IP 的正确姿势】（详解见 docs/学习文档/13）</p>
+ * <p>【教学：获取客户端 IP 的正确姿势】（详解见 monorepo 根 docs/学习文档/13）</p>
  * <p>{@code request.getRemoteAddr()} 拿到的是<b>直连者</b>的 IP —— 生产环境部署了
  * nginx 反向代理后，它永远是 127.0.0.1，真实 IP 藏在 {@code X-Forwarded-For} 头里。</p>
  *

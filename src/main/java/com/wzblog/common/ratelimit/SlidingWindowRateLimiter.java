@@ -16,7 +16,7 @@ import java.util.UUID;
  * <p>相对固定窗口无边界 2x 突发问题；相对令牌桶无需补填速率，适合"每 N 秒/每天 M 次"类配额。
  * Spring Data Redis 按 SHA 缓存脚本，重复调用走 EVALSHA。</p>
  *
- * <p>【教学：算法原理】（详解见 docs/学习文档/13）</p>
+ * <p>【教学：算法原理】（详解见 monorepo 根 docs/学习文档/13）</p>
  * <p>Redis ZSET 的 score 存"请求时间戳"。判定"最近 window 内有没有超过 limit 次"分三步：
  * 清窗口外旧记录（ZREMRANGEBYSCORE）→ 数一数（ZCARD）→ 没超就把自己记进去（ZADD）。
  * 三步必须是<b>原子</b>的 —— 若分开执行，两个并发请求会都查到"没超"然后都写入（超发）。

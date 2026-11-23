@@ -12,7 +12,7 @@ import java.time.Instant;
  * <p>登出流程需要它的两个字段：</p>
  * <ul>
  *   <li>{@code jti}（JWT ID）：登出时把它写入 Redis 黑名单 —— 这是"JWT 无法主动撤销"
- *       问题的补救方案（详见 docs/学习文档/07）；</li>
+ *       问题的补救方案（详见 monorepo 根 docs/学习文档/07）；</li>
  *   <li>{@code expiresAt}：黑名单条目的 TTL 直接取令牌剩余寿命，令牌自然过期后
  *       黑名单条目也自动消失，不给 Redis 留垃圾。</li>
  * </ul>
