@@ -7,6 +7,7 @@ import java.time.Instant;
 
 /**
  * 本人资料：仅 /users/me 返回 email/status。
+ * openidBound 表示当前账号是否已绑定微信登录（B18 可选增强，前端据此决定是否提示绑定）。
  */
 public record UserSelfVO(
         @JsonSerialize(using = ToStringSerializer.class) Long id,
@@ -14,6 +15,7 @@ public record UserSelfVO(
         String nickname,
         String email,
         boolean emailVerified,
+        boolean openidBound,
         String avatarUrl,
         String bio,
         String role,

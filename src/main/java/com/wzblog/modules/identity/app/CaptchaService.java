@@ -48,8 +48,10 @@ public class CaptchaService {
         }
         String code = new String(chars);
         captchaStore.save(captchaId, code);
+        // 本地调试开关（WZBLOG_LOG_VERIFICATION_CODE，生产恒关）开启时随响应返码：契约工具自动登录用
+        String exposed = properties.isLogVerificationCode() ? code : null;
         return new CaptchaVO(captchaId, "data:image/png;base64," + render(code),
-                (int) captchaStore.ttl().toSeconds());
+                (int) captchaStore.ttl().toSeconds(), exposed);
     }
 
     /**

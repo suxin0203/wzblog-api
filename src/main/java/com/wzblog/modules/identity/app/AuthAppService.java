@@ -8,6 +8,7 @@ import com.wzblog.common.security.Role;
 import com.wzblog.common.util.Times;
 import com.wzblog.common.web.ClientInfo;
 import com.wzblog.common.web.CurrentUser;
+import com.wzblog.modules.interaction.app.CommentOwnershipFacade;
 import com.wzblog.modules.identity.api.dto.LoginRequest;
 import com.wzblog.modules.identity.api.dto.RegisterRequest;
 import com.wzblog.modules.identity.api.vo.TokenPairVO;
@@ -29,6 +30,7 @@ import com.wzblog.modules.identity.infra.security.JwtService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -63,6 +65,8 @@ public class AuthAppService {
     private final AuthProperties properties;
     private final ApplicationEventPublisher eventPublisher;
     private final UserVoAssembler assembler;
+    private final WechatIdentityService wechatIdentityService;
+    private final CommentOwnershipFacade commentOwnershipFacade;
     private final String dummyPasswordHash;
 
     public AuthAppService(UserMapper userMapper,
@@ -75,7 +79,9 @@ public class AuthAppService {
                           LoginAuditWriter auditWriter,
                           AuthProperties properties,
                           ApplicationEventPublisher eventPublisher,
-                          UserVoAssembler assembler) {
+                          UserVoAssembler assembler,
+                          @Lazy WechatIdentityService wechatIdentityService,
+                          @Lazy CommentOwnershipFacade commentOwnershipFacade) {
         this.userMapper = userMapper;
         this.refreshTokenMapper = refreshTokenMapper;
         this.passwordEncoder = passwordEncoder;
@@ -87,6 +93,8 @@ public class AuthAppService {
         this.properties = properties;
         this.eventPublisher = eventPublisher;
         this.assembler = assembler;
+        this.wechatIdentityService = wechatIdentityService;
+        this.commentOwnershipFacade = commentOwnershipFacade;
         this.dummyPasswordHash = passwordEncoder.encode("wzblog-dummy-password-1");
     }
 
@@ -183,6 +191,75 @@ public class AuthAppService {
         attemptStore.clearFailures(usernameHash);
         auditWriter.recordSuccess(user.getId(), username, client);
         return issueTokens(user.getId(), client);
+    }
+
+    /**
+     * 扫码临时账号 → 已有博客账号的 openid 移交（B18 可选增强 /auth/wechat/bind-migrate 业务体）。
+     * 同事务顺序（任一步失败整体回滚）：图形验证码 → 目标账号账密（复用登录的失败锁定与审计，
+     * 含 dummy-hash 计时对齐）→ 前置校验（来源=WECHAT 的自动账号、目标未绑微信）→
+     * bindWechat（匿名化注销临时账号并条件更新移交 openid）→ 评论归属改挂目标账号 →
+     * 撤销临时账号全部刷新令牌 → 为目标账号签发新令牌。
+     */
+    @Transactional
+    public BindMigrateOutcome bindMigrate(Long currentUserId, String targetUsername, String rawPassword,
+                                          String captchaId, String captchaCode, ClientInfo client) {
+        captchaService.verify(captchaId, captchaCode);
+
+        User current = userMapper.selectById(currentUserId);
+        if (current == null || current.isDeleted()) {
+            throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+        }
+        if (current.getSource() != UserSource.WECHAT) {
+            throw new BusinessException(ErrorCode.WECHAT_MIGRATE_SOURCE_INVALID);
+        }
+        String openid = current.getOpenid();
+        if (openid == null || openid.isBlank()) {
+            throw new BusinessException(ErrorCode.WECHAT_MIGRATE_SOURCE_INVALID);
+        }
+
+        String usernameHash = IdentityCrypto.sha256Hex(targetUsername.toLowerCase(Locale.ROOT));
+        Long lockRemaining = attemptStore.lockRemainingSeconds(usernameHash);
+        if (lockRemaining != null) {
+            auditFailure(null, targetUsername, LoginFailureReason.LOCKED, client);
+            throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED,
+                    ErrorCode.AUTH_ACCOUNT_LOCKED.defaultMessage(), lockRemaining);
+        }
+        User target = findByUsername(targetUsername);
+        if (target == null) {
+            passwordEncoder.matches(rawPassword, dummyPasswordHash);
+            auditFailure(null, targetUsername, LoginFailureReason.BAD_CREDENTIALS, client);
+            throw new BusinessException(ErrorCode.AUTH_BAD_CREDENTIALS);
+        }
+        if (!passwordEncoder.matches(rawPassword, target.getPasswordHash())) {
+            long failures = attemptStore.incrementFailure(usernameHash);
+            if (failures >= properties.getLoginMaxFailures()) {
+                attemptStore.lock(usernameHash);
+                auditFailure(target.getId(), targetUsername, LoginFailureReason.LOCKED, client);
+                throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED,
+                        ErrorCode.AUTH_ACCOUNT_LOCKED.defaultMessage(),
+                        properties.getLoginLockTtl().toSeconds());
+            }
+            auditFailure(target.getId(), targetUsername, LoginFailureReason.BAD_CREDENTIALS, client);
+            throw new BusinessException(ErrorCode.AUTH_BAD_CREDENTIALS);
+        }
+        if (target.getStatus() == UserStatus.DISABLED) {
+            auditFailure(target.getId(), targetUsername, LoginFailureReason.DISABLED, client);
+            throw new BusinessException(ErrorCode.AUTH_ACCOUNT_DISABLED);
+        }
+        if (target.getOpenid() != null) {
+            throw new BusinessException(ErrorCode.WECHAT_TARGET_ALREADY_BOUND);
+        }
+
+        wechatIdentityService.bindWechat(target.getId(), openid, current.getUnionid());
+        commentOwnershipFacade.migrateOwnership(currentUserId, target.getId());
+        revokeAll(currentUserId, RevokeReason.ADMIN);
+        attemptStore.clearFailures(usernameHash);
+        var tokens = issueTokens(target.getId(), client);
+        return new BindMigrateOutcome(tokens, target.getId());
+    }
+
+    /** bindMigrate 返回：目标账号令牌 + 目标 id（Facade 层再取简版视图拼响应）。 */
+    public record BindMigrateOutcome(TokenPairVO tokens, Long targetUserId) {
     }
 
     /**

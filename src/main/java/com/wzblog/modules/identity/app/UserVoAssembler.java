@@ -32,6 +32,7 @@ public class UserVoAssembler {
                 user.getNickname(),
                 user.getEmail(),
                 user.getEmailVerifiedAt() != null,
+                user.getOpenid() != null,
                 avatarUrl(user.getAvatarKey()),
                 user.getBio(),
                 user.getRole().name(),

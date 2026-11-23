@@ -126,7 +126,7 @@ wzblog:
     login-ip-limit-per-minute: 30    # 单 IP 每分钟登录尝试上限（防爆破第一道闸）
     reset-token-ttl: 5m              # 找回密码一次性凭证有效期
     code-pepper: ${WZBLOG_CODE_PEPPER}   # 验证码哈希佐料盐：库被拖也离线穷举不出 6 位码（分层防御）
-    log-verification-code: ${WZBLOG_LOG_VERIFICATION_CODE:false}   # 本地调试：验证码打进日志省得收邮件
+    log-verification-code: ${WZBLOG_LOG_VERIFICATION_CODE:false}   # 本地调试：邮件验证码打进日志 + 图形验证码随 /auth/captcha 响应返码（契约工具自动登录用）；生产必须 false
     verification-max-attempts: 3     # 验证码尝试上限
     register-ip-limit-per-hour: 10   # 注册接口 IP 限流
     forgot-email-limit-per-hour: 5   # 找回密码按邮箱限流（防邮件炸弹）

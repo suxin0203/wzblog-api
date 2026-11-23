@@ -65,6 +65,26 @@ public class WechatIdentityFacade {
         return true;
     }
 
+    /**
+     * 扫码临时账号 → 已有博客账号的 openid 移交（B18 可选增强 /auth/wechat/bind-migrate）：
+     * 账密校验（复用登录防爆破/锁定/审计）→ 匿名化注销临时账号并移交 openid →
+     * 评论归属改挂 → 撤销临时账号令牌 → 为目标账号签发新令牌。
+     */
+    @Transactional
+    public BindMigrated bindMigrate(Long currentUserId, String targetUsername, String rawPassword,
+                                    String captchaId, String captchaCode, ClientInfo client) {
+        var outcome = authAppService.bindMigrate(currentUserId, targetUsername, rawPassword,
+                captchaId, captchaCode, client);
+        return new BindMigrated(
+                new IssuedTokens(outcome.tokens().accessToken(), outcome.tokens().expiresIn(),
+                        outcome.tokens().refreshToken(), outcome.tokens().refreshExpiresIn()),
+                userView(outcome.targetUserId()));
+    }
+
+    /** bindMigrate 纯类型结果：目标账号令牌 + 简版视图。 */
+    public record BindMigrated(IssuedTokens tokens, WechatUserView user) {
+    }
+
     /** 用户简版视图；不存在返回 null。 */
     public WechatUserView userView(Long userId) {
         var view = identityService.viewOf(userId);

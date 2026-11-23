@@ -11,6 +11,8 @@ import com.wzblog.modules.wechat.app.WechatLoginService;
 import com.wzblog.modules.wechat.api.dto.QrConfirmRequest;
 import com.wzblog.modules.wechat.api.dto.QrRegisterConfirmRequest;
 import com.wzblog.modules.wechat.api.dto.QrTicketExchangeRequest;
+import com.wzblog.modules.wechat.api.dto.WechatBindByTokenRequest;
+import com.wzblog.modules.wechat.api.dto.WechatBindMigrateRequest;
 import com.wzblog.modules.wechat.api.dto.WechatBindRequest;
 import com.wzblog.modules.wechat.api.dto.WechatLoginRequest;
 import com.wzblog.modules.wechat.api.vo.QrConfirmVO;
@@ -73,6 +75,38 @@ public class QrLoginController {
         return Result.ok(new WechatBindVO(true, toUserVO(view)));
     }
 
+    /**
+     * 已登录网页用户凭扫码 bindToken 绑定微信（B18 可选增强）：
+     * 轮询 CONFIRMED 后把一次性 bindToken 换成 openid 绑到当前账号（openid 属扫码
+     * 自动账号时自动匿名化注销并移交）；成功即消费，失败可重试。
+     */
+    @PostMapping("/wechat/bind-by-token")
+    public Result<WechatBindVO> wechatBindByToken(@AuthenticationPrincipal CurrentUser currentUser,
+                                                  @Valid @RequestBody WechatBindByTokenRequest request) {
+        requireLogin(currentUser);
+        var resolved = qrSessions.resolveWebBind(request.bindToken().trim());
+        var view = wechatLogin.bindByOpenid(resolved.openid(), currentUser.id());
+        qrSessions.consumeAfterWebBind(resolved.sceneId(), request.bindToken().trim());
+        return Result.ok(new WechatBindVO(true, toUserVO(view)));
+    }
+
+    /**
+     * 扫码登录落在自动账号时，凭已有博客账号账密移交 openid（B18 可选增强）：
+     * 自动账号匿名化注销、评论改挂目标账号、撤销其全部刷新令牌，返回目标账号令牌。
+     */
+    @PostMapping("/wechat/bind-migrate")
+    public Result<WechatLoginVO> wechatBindMigrate(@AuthenticationPrincipal CurrentUser currentUser,
+                                                   @Valid @RequestBody WechatBindMigrateRequest request,
+                                                   HttpServletRequest httpRequest) {
+        requireLogin(currentUser);
+        var migrated = wechatLogin.bindMigrate(currentUser.id(), request.username().trim(),
+                request.password(), request.captchaId(), request.captchaCode(),
+                ClientInfo.from(httpRequest));
+        return Result.ok(WechatLoginVO.bearer(migrated.tokens().accessToken(),
+                migrated.tokens().expiresIn(), migrated.tokens().refreshToken(),
+                migrated.tokens().refreshExpiresIn(), toUserVO(migrated.user())));
+    }
+
     // ------------------------------------------------------------ PC 扫码会话
 
     /** 创建扫码会话（无请求体字段；TTL 120s）。 */
@@ -89,7 +123,7 @@ public class QrLoginController {
                                    HttpServletRequest httpRequest) {
         var status = qrSessions.pollQrStatus(sceneId, ClientInfo.from(httpRequest).ip());
         return Result.ok(new QrStatusVO(status.sceneId(), status.status(),
-                status.ticket(), status.expiresAt(), status.client()));
+                status.ticket(), status.bindToken(), status.expiresAt(), status.client()));
     }
 
     /** 小程序码 PNG 二进制（统一响应壳显式例外；no-store 防缓存陈旧码）。 */

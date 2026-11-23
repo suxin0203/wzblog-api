@@ -46,4 +46,24 @@ public class WechatLoginService {
         identityFacade.bind(userId, session.openid(), session.unionid());
         return identityFacade.userView(userId);
     }
+
+    /**
+     * 已登录网页用户凭扫码 openid 直接绑定（B18 bind-by-token 后半程）：
+     * openid 属扫码自动账号时 M1 自动匿名化注销并移交（bindWechat 内建语义）。
+     */
+    public WechatIdentityFacade.WechatUserView bindByOpenid(String openid, Long userId) {
+        identityFacade.bind(userId, openid, null);
+        return identityFacade.userView(userId);
+    }
+
+    /**
+     * 扫码临时账号把 openid 移交给已有正式博客账号（B18 bind-migrate）：
+     * M1 侧完成账密校验（复用登录防爆破）、匿名化注销、openid 移交、评论归属迁移与令牌签发。
+     */
+    public WechatIdentityFacade.BindMigrated bindMigrate(Long currentUserId, String targetUsername,
+                                                         String rawPassword, String captchaId,
+                                                         String captchaCode, ClientInfo client) {
+        return identityFacade.bindMigrate(currentUserId, targetUsername, rawPassword,
+                captchaId, captchaCode, client);
+    }
 }
