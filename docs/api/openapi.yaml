@@ -1450,8 +1450,10 @@ paths:
           $ref: '#/components/responses/Error401'
         '403':
           $ref: '#/components/responses/Error403'
-      summary: 后台列表（含回收站）
-      description: 契约 R044 ｜ 模块 M2 ｜ 权限 ADMIN ｜ 幂等：天然
+      summary: 后台列表（含回收站）；置顶优先 + 默认 publishedAt DESC（同门户信息流，见 §5.3）
+      description: 契约 R044 ｜ 模块 M2 ｜ 权限 ADMIN ｜ 幂等：天然 ｜ 第一排序键固定 is_pinned DESC（置顶优先）；默认排序键 publishedAt DESC, id
+        DESC（与门户信息流同序，2026-11-23 起默认由 updatedAt 改为 publishedAt）；显式 sort∈{createdAt,publishedAt,updatedAt} 可切换（置顶优先恒为第一键）；published_at
+        为 NULL（草稿）沉底、同 NULL 按 id DESC
       security:
       - bearerAuth: []
   /api/v1/admin/articles/purge-batch:
