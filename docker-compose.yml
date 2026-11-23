@@ -6,6 +6,7 @@ name: wzblog
 services:
   mysql:
     image: mysql:8.0
+    container_name: local-mysql8   # 与本地既有容器/全文档命名对齐（AGENTS.md §9.1、J4）；名字被占用时说明旧容器还在
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
               "--default-time-zone=+00:00"]
     environment:
@@ -29,6 +30,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: local-redis    # 与本地既有容器/全文档命名对齐；名字被占用时说明旧容器还在
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb",
               "--maxmemory-policy", "volatile-lru"]
     ports: ["127.0.0.1:6379:6379"]
