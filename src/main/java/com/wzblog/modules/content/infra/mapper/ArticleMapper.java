@@ -285,6 +285,11 @@ public interface ArticleMapper extends BaseMapper<Article> {
                     @Param("categoryId") Long categoryId,
                     @Param("authorId") Long authorId);
 
+    /**
+     * 后台列表（R044）：第一排序键固定 is_pinned DESC（置顶优先，与门户置顶区块呼应）；
+     * 默认排序键 publishedAt DESC, id DESC = 门户信息流同序（decisions 2026-11-23）；
+     * published_at IS NULL（草稿）在 DESC 下沉底、同 NULL 按 id DESC。
+     */
     @Select("""
             <script>
             SELECT
@@ -306,6 +311,7 @@ public interface ArticleMapper extends BaseMapper<Article> {
                    OR a.summary LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!')
             </if>
             ORDER BY
+            a.is_pinned DESC,
             <choose>
               <when test="sort == 'createdAt'">a.created_at DESC</when>
               <when test="sort == 'publishedAt'">a.published_at DESC</when>

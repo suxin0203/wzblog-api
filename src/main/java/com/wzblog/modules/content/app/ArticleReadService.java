@@ -253,7 +253,8 @@ public class ArticleReadService {
         int safeSize = PageParams.requirePageSize(pageSize);
         String statusFilter = statusFilter(status);
         String visibilityFilter = visibilityFilter(visibility);
-        String sortKey = switch (sort == null || sort.isBlank() ? "updatedAt" : sort) {
+        // 默认 publishedAt（与门户信息流 R022 同序，便于编辑时对照首页位置）；置顶优先由 mapper 固定第一键保证。
+        String sortKey = switch (sort == null || sort.isBlank() ? "publishedAt" : sort) {
             case "updatedAt" -> "updatedAt";
             case "createdAt" -> "createdAt";
             case "publishedAt" -> "publishedAt";

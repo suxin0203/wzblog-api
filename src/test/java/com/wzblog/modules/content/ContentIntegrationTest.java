@@ -741,6 +741,56 @@ class ContentIntegrationTest extends IdentityTestSupport {
     }
 
     @Test
+    void adminListPinnedFirstAndMatchesFeedOrder() {
+        // decisions 2026-11-23：后台列表第一键固定 is_pinned DESC，默认排序键 publishedAt（与门户信息流同序）；
+        // 旧默认 updatedAt 曾导致「编辑旧文后台跳顶而首页不动」。
+        String token = adminToken();
+        HttpResult createdA = createArticle(token, articleBody(unique("ord") + " A", "排序对齐"));
+        HttpResult createdB = createArticle(token, articleBody(unique("ord") + " B", "排序对齐"));
+        HttpResult createdC = createArticle(token, articleBody(unique("ord") + " C", "排序对齐"));
+        long idA = createdA.data().path("id").asLong();
+        long idB = createdB.data().path("id").asLong();
+        long idC = createdC.data().path("id").asLong();
+        publish(String.valueOf(idA), token);
+        publish(String.valueOf(idB), token);
+        publish(String.valueOf(idC), token);
+        // 发布时间 A < B < C；B 置顶（中间篇，验证置顶优先而非时间序）
+        jdbc.update("UPDATE articles SET published_at = '2042-01-01 00:00:00' WHERE id = ?", idA);
+        jdbc.update("UPDATE articles SET published_at = '2042-01-02 00:00:00' WHERE id = ?", idB);
+        jdbc.update("UPDATE articles SET published_at = '2042-01-03 00:00:00' WHERE id = ?", idC);
+        assertThat(post("/api/v1/articles/" + idB + "/pin", Map.of(), token).status()).isEqualTo(200);
+
+        // 后台默认（不传 sort）：[B(置顶), C(最新), A(最旧)]
+        HttpResult admin = get("/api/v1/admin/articles?pageSize=50", token);
+        assertThat(admin.status()).isEqualTo(200);
+        List<String> adminIds = listIds(admin.data().path("list"));
+        assertThat(adminIds.indexOf(String.valueOf(idB))).as("置顶 B 在 C 前").isLessThan(adminIds.indexOf(String.valueOf(idC)));
+        assertThat(adminIds.indexOf(String.valueOf(idC))).as("C 在 A 前（发布倒序）").isLessThan(adminIds.indexOf(String.valueOf(idA)));
+
+        // updated_at 变最新不改变默认顺序（旧默认 updatedAt 会把 A 跳到最顶）
+        jdbc.update("UPDATE articles SET updated_at = '2042-12-31 00:00:00' WHERE id = ?", idA);
+        List<String> adminAgain = listIds(get("/api/v1/admin/articles?pageSize=50", token).data().path("list"));
+        assertThat(adminAgain.indexOf(String.valueOf(idB))).isLessThan(adminAgain.indexOf(String.valueOf(idC)));
+        assertThat(adminAgain.indexOf(String.valueOf(idC))).isLessThan(adminAgain.indexOf(String.valueOf(idA)));
+
+        // 显式 sort=updatedAt 仍可按最近编辑找文（置顶优先恒为第一键）
+        List<String> byUpdated = listIds(get("/api/v1/admin/articles?sort=updatedAt&pageSize=50", token).data().path("list"));
+        assertThat(byUpdated.indexOf(String.valueOf(idA))).as("sort=updatedAt 时 A（刚编辑）在 C 前")
+                .isLessThan(byUpdated.indexOf(String.valueOf(idC)));
+
+        // 门户信息流（排除置顶）与后台列表非置顶部分同序：C 在 A 前，B 不在 feed
+        List<String> feedIds = listIds(get("/api/v1/articles?size=50", null).data().path("list"));
+        assertThat(feedIds).doesNotContain(String.valueOf(idB));
+        assertThat(feedIds.indexOf(String.valueOf(idC))).as("feed 与后台同序：C 在 A 前")
+                .isLessThan(feedIds.indexOf(String.valueOf(idA)));
+
+        for (long id : new long[]{idA, idB, idC}) {
+            delete("/api/v1/articles/" + id, token);
+            delete("/api/v1/admin/articles/" + id + "/purge", token);
+        }
+    }
+
+    @Test
     void archiveConvertsUtcToShanghaiAcrossYearBoundary() {
         String token = adminToken();
         HttpResult crossYear = createArticle(token, articleBody(unique("跨年"), "utc 12-31 23:30"));
