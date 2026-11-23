@@ -19,3 +19,4 @@
 - 必填（`@NotBlank`/`@NotNull`）缺失或空串 → `COMMON_VALIDATION_ERROR` + `data.errors`。
 - `MethodArgumentNotValid` / `BindException` / `ConstraintViolationException` 三条路径响应同构（400 + errors）。
 - 三字段超过硬上限时由 Bean Validation 拦截，不进入业务层。
+- B18 微信绑定（2026-11-24）新增两个业务码（全量清单见接口对接文档错误码附录）：`WECHAT_TARGET_ALREADY_BOUND`(409，bind-migrate 目标账号已绑其他微信)、`WECHAT_MIGRATE_SOURCE_INVALID`(409，bind-migrate 当前登录非扫码自动账号)。

@@ -629,6 +629,66 @@ paths:
               properties:
                 code:
                   type: string
+  /api/v1/auth/wechat/bind-by-token:
+    post:
+      tags:
+      - auth
+      operationId: wechatBindByToken
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WechatBindByTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultWechatBindVO'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '409':
+          $ref: '#/components/responses/Error409'
+      summary: 凭扫码 confirm 下发的 bindToken 绑定微信到当前用户（openid 属自动账号时匿名化注销移交；bindToken 由轮询响应 CONFIRMED 附带，60s）
+      description: 契约 R149 ｜ 模块 B18 ｜ 权限 USER ｜ 幂等：一次性
+      security:
+      - bearerAuth: []
+  /api/v1/auth/wechat/bind-migrate:
+    post:
+      tags:
+      - auth
+      operationId: wechatBindMigrate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WechatBindMigrateRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultWechatLoginVO'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '409':
+          $ref: '#/components/responses/Error409'
+      summary: 扫码自动账号凭已有博客账号账密移交 openid（验证码+失败锁定；自动账号匿名化注销、评论改挂目标账号、令牌轮换）
+      description: 契约 R150 ｜ 模块 B18 ｜ 权限 USER ｜ 幂等：是
+      security:
+      - bearerAuth: []
   /api/v1/auth/wechat/login:
     post:
       tags:
@@ -5717,6 +5777,8 @@ components:
           type: string
         emailVerified:
           type: boolean
+        openidBound:
+          type: boolean
         avatarUrl:
           type: string
         bio:
@@ -6781,6 +6843,35 @@ components:
           type: boolean
         user:
           $ref: '#/components/schemas/WechatUserVO'
+    WechatBindMigrateRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 20
+          minLength: 0
+        password:
+          type: string
+          maxLength: 64
+          minLength: 0
+        captchaId:
+          type: string
+          description: 图形验证码 id（GET /auth/captcha 获取）；实例关闭验证码时可省略
+        captchaCode:
+          type: string
+          description: 图形验证码内容
+      required:
+      - password
+      - username
+    WechatBindByTokenRequest:
+      type: object
+      properties:
+        bindToken:
+          type: string
+          maxLength: 43
+          minLength: 43
+      required:
+      - bindToken
     RegisterRequest:
       type: object
       properties:
@@ -8051,6 +8142,8 @@ components:
           type: string
         ticket:
           type: string
+        bindToken:
+          type: string
         expiresAt:
           type: string
           format: date-time
@@ -8080,6 +8173,8 @@ components:
         expiresIn:
           type: integer
           format: int32
+        code:
+          type: string
     ResultCaptchaVO:
       type: object
       properties:
