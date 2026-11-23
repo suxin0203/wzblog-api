@@ -11,7 +11,7 @@
 | **git 历史**（首选，无需外部文件） | `git checkout docs-archive-ref -- "docs/archive/design/04-接口契约.md"` |
 | 查看某份旧文档内容 | `git show docs-archive-ref:docs/archive/design/04-接口契约.md` |
 | 列出当时全部归档文件 | `git ls-tree -r --name-only docs-archive-ref -- docs/archive`（53 个） |
-| **离线备份** | `E:\MyCodeProject\Java\backup\docs-archive-20261031.zip`（52 个文件，759 KB） |
+| **离线备份** | `E:\MyCodeProject\wzBlogV3\backup\archives\docs-archive-20261031.zip`（52 个文件，759 KB；backup 已迁入 monorepo 根） |
 
 ## 归档清单（按类型）
 
@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | `design/` | 可行性分析、架构方案 v2、Java 版重构指南、项目学习指南、**旧接口契约总表（04）**、模块设计 M0–M8 | 设计期产物；已被 `docs/api/接口对接文档.md`（含 §21 附录）与代码取代 |
 | `plans/` | 开发计划与进度（06）、ORCHESTRATOR 与轮次记录、任务单、对接提示词 | 一次性排期与执行记录 |
-| `reports/` | 一致性检查报告、里程碑收口、数据基线快照、**旧文档索引（00）**、开发/运维/验收/协作手册（02/08/09/11）、需求清单（05）、测试验收（07/07a/07b）、历史通知、简历材料 | 阶段结论；其中的**可执行命令已抽进根 `README.md`**，**协作规范已抽进 `docs/AI-RULES.md`** |
+| `reports/` | 一致性检查报告、里程碑收口、数据基线快照、**旧文档索引（00）**、开发/运维/验收/协作手册（02/08/09/11）、需求清单（05）、测试验收（07/07a/07b）、历史通知、简历材料 | 阶段结论；其中的**可执行命令已抽进根 `README.md`**，**协作规范已抽进 monorepo 根 `AGENTS.md`**（原 docs/AI-RULES.md） |
 
 ## 需要留意的例外
 
@@ -31,17 +31,21 @@
 ```
 docs/
 ├── README.md              文档地图（先看这个）
-├── AI-RULES.md            AI 协作规范（Skill 入口）
-├── decisions.md           口径台账（D1–D96）
-├── backlog.md             遗留清单（B01–B16）
+├── decisions.md           口径台账（D1–D98 + 待分配编号条目）
+├── backlog.md             遗留清单（B01–B19）
 ├── 03-数据库设计.md
+├── 04-接口契约.md          路由总表（tools/contract 输入）
 ├── 14-业务逻辑与角色定义.md
 ├── 15-前端对接指南.md
 ├── 16-小程序旧协议兼容.md   ← 线上在用，勿改
+├── 17-小程序微信登录对接任务书.md
+├── 18-项目功能全景与技术亮点.md
 ├── api/
 │   ├── 接口对接文档.md     接口契约（含 §21 契约总表）
 │   ├── error-codes.md     字段上限与业务码
 │   └── openapi.yaml       机器契约（springdoc 导出，禁手改）
 └── archive/
     └── README.md          本页
+
+（AI 协作规范原为 docs/AI-RULES.md，已迁出为 monorepo 根 AGENTS.md）
 ```

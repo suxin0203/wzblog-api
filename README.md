@@ -73,7 +73,7 @@ curl http://localhost:8021/api/v1/ping
 # Swagger UI → http://localhost:8021/swagger-ui.html
 ```
 
-**文档**：接口契约 [docs/api/接口对接文档.md](docs/api/接口对接文档.md)（v1.6.8，与代码同步）· 文档地图 [docs/README.md](docs/README.md) · 工程规范 [docs/AI-RULES.md](docs/AI-RULES.md)；其余开发/验收过程文档已归档（见 docs/archive/README.md）。
+**文档**：接口契约 [docs/api/接口对接文档.md](docs/api/接口对接文档.md)（v1.6.8，与代码同步）· 文档地图 [docs/README.md](docs/README.md) · 工程规范 [../AGENTS.md](../AGENTS.md)（monorepo 根，原 docs/AI-RULES.md 已迁出更名）；其余开发/验收过程文档已归档（见 docs/archive/README.md）。
 
 **测试**（Testcontainers 起真实容器，非内存库）：
 
