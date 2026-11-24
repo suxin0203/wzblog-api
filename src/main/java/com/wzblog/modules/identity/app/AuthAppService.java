@@ -203,6 +203,11 @@ public class AuthAppService {
     @Transactional
     public BindMigrateOutcome bindMigrate(Long currentUserId, String targetUsername, String rawPassword,
                                           String captchaId, String captchaCode, ClientInfo client) {
+        // 与 login 同款 IP 级防爆破闸门（审查 P3）：本接口同样接收密码，不能只靠按用户名锁定
+        if (!attemptStore.tryAcquireLoginIp(client.ip(), attemptStore.loginIpLimitPerMinute())) {
+            auditFailure(null, targetUsername, LoginFailureReason.RATE_LIMITED, client);
+            throw new BusinessException(ErrorCode.COMMON_RATE_LIMITED, "操作过于频繁，请稍后再试", 60L);
+        }
         captchaService.verify(captchaId, captchaCode);
 
         User current = userMapper.selectById(currentUserId);

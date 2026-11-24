@@ -84,7 +84,7 @@ public class QrLoginController {
     public Result<WechatBindVO> wechatBindByToken(@AuthenticationPrincipal CurrentUser currentUser,
                                                   @Valid @RequestBody WechatBindByTokenRequest request) {
         requireLogin(currentUser);
-        var resolved = qrSessions.resolveWebBind(request.bindToken().trim());
+        var resolved = qrSessions.resolveWebBind(request.bindToken().trim(), currentUser.id());
         var view = wechatLogin.bindByOpenid(resolved.openid(), currentUser.id());
         qrSessions.consumeAfterWebBind(resolved.sceneId(), request.bindToken().trim());
         return Result.ok(new WechatBindVO(true, toUserVO(view)));
@@ -109,11 +109,13 @@ public class QrLoginController {
 
     // ------------------------------------------------------------ PC 扫码会话
 
-    /** 创建扫码会话（无请求体字段；TTL 120s）。 */
+    /** 创建扫码会话（无请求体字段；TTL 120s）。已登录创建者会被记录，供 bind-by-token 校验归属。 */
     @PostMapping("/qr/sessions")
-    public Result<QrSessionVO> createSession(HttpServletRequest httpRequest) {
+    public Result<QrSessionVO> createSession(@AuthenticationPrincipal CurrentUser currentUser,
+                                             HttpServletRequest httpRequest) {
         ClientInfo client = ClientInfo.from(httpRequest);
-        var created = qrSessions.openQrSession(client.ip(), client.userAgent());
+        var created = qrSessions.openQrSession(client.ip(), client.userAgent(),
+                currentUser == null ? null : currentUser.id());
         return Result.ok(new QrSessionVO(created.sceneId(), "PENDING", created.expiresAt()));
     }
 

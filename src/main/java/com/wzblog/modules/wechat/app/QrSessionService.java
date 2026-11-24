@@ -42,6 +42,7 @@ public class QrSessionService {
     private static final String STATUS_PREFIX = "wzblog:wechat:qr:";
     private static final String QR_PNG_PREFIX = "wzblog:wechat:qrcode:";
     private static final String POLL_BIND_PREFIX = "wzblog:wechat:qr:pollbind:";
+    private static final String CREATOR_PREFIX = "wzblog:wechat:qr:creator:";
 
     private final QrSessionMapper sessionMapper;
     private final WeChatApiClient weChatApi;
@@ -318,6 +319,15 @@ public class QrSessionService {
      * 码图不随创建返回，由 GET /auth/qr/sessions/{sceneId}/code 单独取（响应壳显式例外）。
      */
     public QrCreated openQrSession(String clientIp, String userAgent) {
+        return openQrSession(clientIp, userAgent, null);
+    }
+
+    /**
+     * 创建扫码会话（B18 起区分创建者）：creatorUserId 非空（网页已登录用户发起，绑定用途）时
+     * 在 Redis 记录创建者（随会话 TTL 失效）——bindToken 轮询镜像与 bind-by-token 均校验
+     * 「请求者==创建者」，杜绝匿名登录会话的 bindToken 被旁观者窃用绑定（P1 审查修复）。
+     */
+    public QrCreated openQrSession(String clientIp, String userAgent, Long creatorUserId) {
         requireEnabled();
         requireRate("qr-create-v1", clientIp, 10, 60);
         LocalDateTime now = Times.nowUtc();
@@ -332,6 +342,10 @@ public class QrSessionService {
         session.setCreatedAt(now);
         sessionMapper.insert(session);
         cacheStatus(sceneId, QrSession.PENDING, expiresAt);
+        if (creatorUserId != null) {
+            redis.opsForValue().set(CREATOR_PREFIX + sceneId, String.valueOf(creatorUserId),
+                    Duration.ofSeconds(properties.getQrSessionTtlSeconds()));
+        }
         return new QrCreated(sceneId, expiresAt);
     }
 
@@ -365,13 +379,19 @@ public class QrSessionService {
 
     /**
      * bind-by-token 前半程（B18 可选增强）：校验一次性 bindToken（哈希匹配 + 未过期）
-     * 并解析其承载的 openid。只校验不消费；绑定成功后调用方走 {@link #consumeAfterWebBind}
-     * 原子消费（DB 哈希置空 + Redis 双键清除）。
+     * 并解析其承载的 openid。**仅限会话创建者本人**（P1 审查修复：匿名登录会话无创建者
+     * 标记、他人会话创建者不匹配，均拒绝）。只校验不消费；绑定成功后调用方走
+     * {@link #consumeAfterWebBind} 原子消费（DB 哈希置空 + Redis 三键清除）。
      */
-    public ResolvedWebBind resolveWebBind(String bindToken) {
+    public ResolvedWebBind resolveWebBind(String bindToken, Long requesterUserId) {
         String hash = sha256Hex(bindToken);
         String sceneId = redis.opsForValue().get("wzblog:wechat:qr:bind:" + hash);
         if (sceneId == null) {
+            throw new BusinessException(ErrorCode.WECHAT_BIND_TOKEN_INVALID);
+        }
+        String creator = redis.opsForValue().get(CREATOR_PREFIX + sceneId);
+        if (creator == null || requesterUserId == null
+                || !creator.equals(String.valueOf(requesterUserId))) {
             throw new BusinessException(ErrorCode.WECHAT_BIND_TOKEN_INVALID);
         }
         QrSession session = requireSession(sceneId);
@@ -387,10 +407,11 @@ public class QrSessionService {
     public record ResolvedWebBind(String sceneId, String openid) {
     }
 
-    /** bind-by-token 后半程：绑定成功后消费 bindToken（复用 consumeBindToken + 清轮询镜像）。 */
+    /** bind-by-token 后半程：绑定成功后消费 bindToken（复用 consumeBindToken + 清轮询/创建者键）。 */
     public void consumeAfterWebBind(String sceneId, String bindToken) {
         consumeBindToken(sceneId, bindToken);
         redis.delete(POLL_BIND_PREFIX + sceneId);
+        redis.delete(CREATOR_PREFIX + sceneId);
     }
 
     /**
@@ -453,9 +474,12 @@ public class QrSessionService {
         issueTicket(sceneId);
         redis.opsForValue().set("wzblog:wechat:qr:bind:" + sha256Hex(newBindToken), sceneId,
                 Duration.ofSeconds(properties.getTicketTtlSeconds()));
-        // B18 bind-by-token：给会话创建者（网页轮询侧）镜像一份 raw token（与小程序同值同 TTL）
-        redis.opsForValue().set(POLL_BIND_PREFIX + sceneId, newBindToken,
-                Duration.ofSeconds(properties.getTicketTtlSeconds()));
+        // B18 bind-by-token：仅「已登录创建者」的会话向网页轮询侧镜像 raw token——
+        // 匿名登录会话不镜像（P1 审查修复：旁观者凭 sceneId 不得换取 bindToken 绑定他人 openid）
+        if (redis.opsForValue().get(CREATOR_PREFIX + sceneId) != null) {
+            redis.opsForValue().set(POLL_BIND_PREFIX + sceneId, newBindToken,
+                    Duration.ofSeconds(properties.getTicketTtlSeconds()));
+        }
         return new QrConfirm(sceneId, QrSession.CONFIRMED, newBindToken, bindExpiresAt);
     }
 

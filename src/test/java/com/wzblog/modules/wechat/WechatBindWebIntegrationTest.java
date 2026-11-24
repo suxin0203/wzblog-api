@@ -34,7 +34,12 @@ class WechatBindWebIntegrationTest extends IdentityTestSupport {
     }
 
     private String createSession() {
-        var response = post("/api/v1/auth/qr/sessions", Map.of(), null);
+        return createSession(null);
+    }
+
+    /** creatorToken 非空 = 网页已登录用户创建（绑定用途，服务端记录创建者归属）。 */
+    private String createSession(String creatorToken) {
+        var response = post("/api/v1/auth/qr/sessions", Map.of(), creatorToken);
         assertThat(response.code()).as("body=%s", response.body()).isEqualTo("OK");
         return response.data().path("sceneId").asText();
     }
@@ -59,7 +64,7 @@ class WechatBindWebIntegrationTest extends IdentityTestSupport {
     // ------------------------------------------------------------ 场景 A：bind-by-token
 
     @Test
-    void webUserBindsWechatViaBindToken() {
+    void webUserBindsWechatViaBindToken() throws Exception {
         String username = unique("bindweb");
         register(username, PASSWORD, null);
         String webToken = accessToken(username, PASSWORD);
@@ -69,7 +74,8 @@ class WechatBindWebIntegrationTest extends IdentityTestSupport {
         var miniLogin = post("/api/v1/auth/wechat/login", Map.of("code", miniCode), null);
         String miniToken = miniLogin.data().path("accessToken").asText();
         String miniUserId = miniLogin.data().path("user").path("id").asText();
-        String sceneId = createSession();
+        // 会话须由网页用户（已登录）创建：bindToken 镜像与 bind-by-token 均校验创建者归属
+        String sceneId = createSession(webToken);
         var confirmed = post("/api/v1/auth/qr/sessions/" + sceneId + "/confirm", Map.of(), miniToken);
         assertThat(confirmed.code()).as("body=%s", confirmed.body()).isEqualTo("OK");
 
@@ -84,8 +90,11 @@ class WechatBindWebIntegrationTest extends IdentityTestSupport {
         assertThat(bound.code()).as("body=%s", bound.body()).isEqualTo("OK");
         assertThat(bound.data().path("user").path("openidBound").asBoolean()).isTrue();
 
+        // 轮询限流 1 次/秒：间隔 1.1s 再验（否则 429 空 data 会造成断言假绿）
+        Thread.sleep(1100);
         var pollAgain = get("/api/v1/auth/qr/sessions/" + sceneId, null);
-        assertThat(pollAgain.data().path("bindToken").asText()).isEmpty();
+        assertThat(pollAgain.data().path("status").asText()).isEqualTo("CONFIRMED");
+        assertThat(pollAgain.data().path("bindToken").asText()).isIn("", "null"); // 已消费：字段为 null
         var reused = post("/api/v1/auth/wechat/bind-by-token", Map.of("bindToken", bindToken), webToken);
         assertThat(reused.code()).isEqualTo("WECHAT_BIND_TOKEN_INVALID");
 
@@ -93,6 +102,31 @@ class WechatBindWebIntegrationTest extends IdentityTestSupport {
         var relogin = post("/api/v1/auth/wechat/login", Map.of("code", miniCode), null);
         assertThat(relogin.code()).isEqualTo("OK");
         assertThat(relogin.data().path("user").path("id").asText()).isNotEqualTo(miniUserId);
+    }
+
+    /** 匿名创建的登录会话（登录流程）不产生 bindToken 镜像、不可网页绑定（P1 审查修复）。 */
+    @Test
+    void anonymousLoginSessionBindTokenCannotBeBound() {
+        String username = unique("bindanon");
+        register(username, PASSWORD, null);
+        String webToken = accessToken(username, PASSWORD);
+
+        String miniCode = "v1-bindanon-" + unique("c");
+        String miniToken = wechatLogin(miniCode);
+        String sceneId = createSession(); // 匿名创建（登录用途）
+        var confirmed = post("/api/v1/auth/qr/sessions/" + sceneId + "/confirm", Map.of(), miniToken);
+        assertThat(confirmed.code()).isEqualTo("OK");
+
+        var poll = get("/api/v1/auth/qr/sessions/" + sceneId, null);
+        assertThat(poll.data().path("status").asText()).isEqualTo("CONFIRMED");
+        // 无创建者镜像：bindToken 为 null（响应显式序列化 null，asText 即 "null"）
+        assertThat(poll.data().path("bindToken").asText()).isIn("", "null");
+
+        // 即使拿到小程序侧 bindToken（同为 43 位一次性），非创建者仍不可网页绑定
+        String miniBindToken = confirmed.data().path("bindToken").asText();
+        var stolen = post("/api/v1/auth/wechat/bind-by-token",
+                Map.of("bindToken", miniBindToken), webToken);
+        assertThat(stolen.code()).isEqualTo("WECHAT_BIND_TOKEN_INVALID");
     }
 
     @Test
