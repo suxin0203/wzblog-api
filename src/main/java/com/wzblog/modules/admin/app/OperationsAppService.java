@@ -62,7 +62,8 @@ public class OperationsAppService {
         banner.setCreatedAt(Times.nowUtc());
         bannerMapper.insert(banner);
         auditRecorder.record(admin, "CONFIG_UPDATE", "SYSTEM", "banner:" + banner.getId(),
-                null, "{\"title\":\"" + safe(banner.getTitle()) + "\"}");
+                null, "{\"title\":\"" + safe(banner.getTitle()) + "\",\"subtitle\":\""
+                        + safe(banner.getSubtitle()) + "\"}");
         return banner;
     }
 
@@ -75,6 +76,7 @@ public class OperationsAppService {
             fileReferencePort.claimByKey(request.getImageKey(), admin.id(), admin, FileBizType.BANNER);
         }
         existing.setTitle(request.getTitle());
+        existing.setSubtitle(request.getSubtitle());
         existing.setImageKey(request.getImageKey());
         existing.setLinkUrl(request.getLinkUrl());
         existing.setSortOrder(request.getSortOrder());
@@ -86,6 +88,7 @@ public class OperationsAppService {
                 new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Banner>()
                         .eq(Banner::getId, existing.getId())
                         .set(Banner::getTitle, existing.getTitle())
+                        .set(Banner::getSubtitle, existing.getSubtitle())
                         .set(Banner::getImageKey, existing.getImageKey())
                         .set(Banner::getLinkUrl, existing.getLinkUrl())
                         .set(Banner::getSortOrder, existing.getSortOrder())
@@ -97,8 +100,8 @@ public class OperationsAppService {
             fileReferencePort.releaseByKey(oldImage);
         }
         auditRecorder.record(admin, "CONFIG_UPDATE", "SYSTEM", "banner:" + id,
-                "{\"title\":\"" + safe(existing.getTitle()) + "\"}",
-                "{\"title\":\"" + safe(request.getTitle()) + "\"}");
+                "{\"title\":\"" + safe(existing.getTitle()) + "\",\"subtitle\":\"" + safe(existing.getSubtitle()) + "\"}",
+                "{\"title\":\"" + safe(request.getTitle()) + "\",\"subtitle\":\"" + safe(request.getSubtitle()) + "\"}");
         return existing;
     }
 
@@ -110,7 +113,8 @@ public class OperationsAppService {
             fileReferencePort.releaseByKey(existing.getImageKey());
         }
         auditRecorder.record(admin, "CONFIG_UPDATE", "SYSTEM", "banner:" + id,
-                "{\"title\":\"" + safe(existing.getTitle()) + "\"}", "{\"deleted\":true}");
+                "{\"title\":\"" + safe(existing.getTitle()) + "\",\"subtitle\":\"" + safe(existing.getSubtitle()) + "\"}",
+                "{\"deleted\":true}");
     }
 
     private Banner requireBanner(Long id) {
@@ -128,6 +132,9 @@ public class OperationsAppService {
         }
         if (banner.getTitle() != null && banner.getTitle().length() > 100) {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "轮播标题不能超过 100 字", null);
+        }
+        if (banner.getSubtitle() != null && banner.getSubtitle().length() > 150) {
+            throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "轮播副标题不能超过 150 字", null);
         }
         if (banner.getLinkUrl() != null && banner.getLinkUrl().length() > 500) {
             throw new BusinessException(ErrorCode.COMMON_VALIDATION_ERROR, "跳转地址不能超过 500 字", null);

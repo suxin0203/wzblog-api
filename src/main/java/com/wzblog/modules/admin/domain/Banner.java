@@ -19,6 +19,8 @@ public class Banner {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String title;
+    /** 副标题/介绍（≤150，可空；契约 §5.3a）。 */
+    private String subtitle;
     private String imageKey;
     private String linkUrl;
     private Integer sortOrder;

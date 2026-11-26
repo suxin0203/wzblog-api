@@ -66,14 +66,15 @@ class AdminIntegrationTest extends IdentityTestSupport {
 
     @Test
     void bannerAndFriendLinkCrud() {
-        // 造一个 BANNER 图片文件（M5 引用计数需要真实行）
+        // 造一个 BANNER 图片文件（M5 引用计数需要真实行；带 thumb_key 验证 imageThumbKey 透传）
         jdbc.update("""
-                INSERT INTO files (bucket, object_key, uploader_id, biz_type, status, ref_count, size_bytes)
-                VALUES ('local', ?, 1, 'BANNER', 'ACTIVE', 0, 100)
-                """, "banners/2026/10/banner-test.png");
+                INSERT INTO files (bucket, object_key, uploader_id, biz_type, status, ref_count, size_bytes, thumb_key)
+                VALUES ('local', ?, 1, 'BANNER', 'ACTIVE', 0, 100, ?)
+                """, "banners/2026/10/banner-test.png", "banners/2026/10/banner-test_thumb.jpg");
 
         Map<String, Object> banner = new LinkedHashMap<>();
         banner.put("title", "新年活动");
+        banner.put("subtitle", "限量积分双倍送");
         banner.put("imageKey", "banners/2026/10/banner-test.png");
         banner.put("linkUrl", "https://example.com");
         banner.put("sortOrder", 1);
@@ -81,10 +82,21 @@ class AdminIntegrationTest extends IdentityTestSupport {
         HttpResult created = post("/api/v1/admin/banners", banner, adminToken());
         assertThat(created.status()).isEqualTo(200);
         long bannerId = created.data().path("id").asLong();
+        assertThat(created.data().path("subtitle").asText()).isEqualTo("限量积分双倍送");
+        assertThat(created.data().path("imageThumbKey").asText())
+                .isEqualTo("banners/2026/10/banner-test_thumb.jpg");
 
-        // 公开列表可见，图片引用计数 +1
+        // subtitle 超上限 → 400 COMMON_VALIDATION_ERROR（契约 §5.3a：业务上界=DTO 上界=150）
+        Map<String, Object> overLimit = new LinkedHashMap<>(banner);
+        overLimit.put("subtitle", "长".repeat(151));
+        assertThat(post("/api/v1/admin/banners", overLimit, adminToken()).status()).isEqualTo(400);
+
+        // 公开列表可见，图片引用计数 +1；subtitle 与 imageThumbKey 透传（§5.3a）
         HttpResult active = get("/api/v1/banners", null);
         assertThat(active.status()).isEqualTo(200);
+        assertThat(active.data().get(0).path("subtitle").asText()).isEqualTo("限量积分双倍送");
+        assertThat(active.data().get(0).path("imageThumbKey").asText())
+                .isEqualTo("banners/2026/10/banner-test_thumb.jpg");
         Integer refCount = jdbc.queryForObject(
                 "SELECT ref_count FROM files WHERE object_key = 'banners/2026/10/banner-test.png'",
                 Integer.class);

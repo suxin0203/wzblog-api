@@ -8,6 +8,7 @@ import com.wzblog.common.web.CurrentUser;
 import com.wzblog.modules.admin.app.OperationsAppService;
 import com.wzblog.modules.admin.domain.Banner;
 import com.wzblog.modules.admin.domain.FriendLink;
+import com.wzblog.modules.media.app.FileAppService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -26,26 +27,35 @@ import java.util.Map;
 
 /**
  * 轮播与友链路由（公开读取 + ADMIN 管理）。
+ * 轮播响应携带 imageThumbKey（files.thumb_key 透传，契约 §5.3a）：thumb 反查经 media 模块
+ * FileAppService（模块间仅依赖对方 app 层，与 content 模块 ArticleAssembler 同模式）。
  */
 @RestController
 public class OperationsController {
 
     private final OperationsAppService operationsAppService;
+    private final FileAppService fileAppService;
 
-    public OperationsController(OperationsAppService operationsAppService) {
+    public OperationsController(OperationsAppService operationsAppService, FileAppService fileAppService) {
         this.operationsAppService = operationsAppService;
+        this.fileAppService = fileAppService;
     }
 
     // ------------------------------------------------------------ 公开
 
     @GetMapping("/banners")
     public ResponseEntity<Result<List<Map<String, Object>>>> banners() {
-        List<Map<String, Object>> list = operationsAppService.activeBanners().stream()
+        List<Banner> active = operationsAppService.activeBanners();
+        Map<String, String> thumbs = fileAppService.thumbKeysByObjectKeys(
+                active.stream().map(Banner::getImageKey).toList());
+        List<Map<String, Object>> list = active.stream()
                 .map(banner -> {
                     Map<String, Object> item = new LinkedHashMap<>();
                     item.put("id", String.valueOf(banner.getId()));
                     item.put("title", banner.getTitle());
+                    item.put("subtitle", banner.getSubtitle());
                     item.put("imageKey", banner.getImageKey());
+                    item.put("imageThumbKey", thumbs.get(banner.getImageKey()));
                     item.put("linkUrl", banner.getLinkUrl());
                     item.put("sortOrder", banner.getSortOrder());
                     return item;
@@ -155,7 +165,10 @@ public class OperationsController {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", String.valueOf(banner.getId()));
         item.put("title", banner.getTitle());
+        item.put("subtitle", banner.getSubtitle());
         item.put("imageKey", banner.getImageKey());
+        item.put("imageThumbKey", fileAppService
+                .thumbKeysByObjectKeys(List.of(banner.getImageKey())).get(banner.getImageKey()));
         item.put("linkUrl", banner.getLinkUrl());
         item.put("sortOrder", banner.getSortOrder());
         item.put("status", banner.getStatus());
