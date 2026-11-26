@@ -14,6 +14,8 @@
 | 称号名 `name` | 50 字符 | 无（`COMMON_VALIDATION_ERROR`；重名 `TITLE_NAME_CONFLICT`） | 50 | `COMMON_VALIDATION_ERROR` |
 | 调分金额 `amount` | ±100000 | `POINTS_ADJUST_INVALID` | ±100000 | `COMMON_VALIDATION_ERROR` |
 | 调分原因 `reason` | 255 字符（列宽） | 无（`COMMON_VALIDATION_ERROR` + errors.reason） | 255 | `COMMON_VALIDATION_ERROR` |
+| 轮播 `subtitle` | 150 字符 | 无（`COMMON_VALIDATION_ERROR`，业务层校验） | 150 | `COMMON_VALIDATION_ERROR` |
+| 轮播 `title` | 100 字符 | 无（`COMMON_VALIDATION_ERROR`，业务层校验） | 100 | `COMMON_VALIDATION_ERROR` |
 
 补充：
 - 必填（`@NotBlank`/`@NotNull`）缺失或空串 → `COMMON_VALIDATION_ERROR` + `data.errors`。

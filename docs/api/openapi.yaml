@@ -4646,8 +4646,9 @@ paths:
                 $ref: '#/components/schemas/ResultListMapStringObject'
         '400':
           $ref: '#/components/responses/Error400'
-      summary: 生效中轮播
-      description: 契约 R128 ｜ 模块 M7 ｜ 权限 PUBLIC ｜ 幂等：天然
+      summary: 生效中轮播；2026-11-27 起响应加 subtitle/imageThumbKey（见 §5.3a）
+      description: 契约 R128 ｜ 模块 M7 ｜ 权限 PUBLIC ｜ 幂等：天然 ｜ 生效中轮播，固定 sortOrder ASC, id ASC；2026-11-27 起响应含 subtitle（≤150，可空）与
+        imageThumbKey（files.thumb_key 透传，未生成时 null）——字段口径见 docs/04-接口契约.md §5.3a
       security: []
   /api/v1/friend-links:
     get:
@@ -4716,7 +4717,7 @@ paths:
           $ref: '#/components/responses/Error401'
         '403':
           $ref: '#/components/responses/Error403'
-      summary: 轮播分页列表
+      summary: 轮播分页列表；含 subtitle/imageThumbKey 回显
       description: 契约 R129 ｜ 模块 M7 ｜ 权限 ADMIN ｜ 幂等：天然
       security:
       - bearerAuth: []
@@ -4780,7 +4781,7 @@ paths:
           $ref: '#/components/responses/Error403'
         '404':
           $ref: '#/components/responses/Error404'
-      summary: 全量更新轮播
+      summary: 全量更新轮播；请求体加可选 subtitle（≤150）
       description: 契约 R131 ｜ 模块 M7 ｜ 权限 ADMIN ｜ 幂等：是
       security:
       - bearerAuth: []
